@@ -1,0 +1,65 @@
+[workspace]
+members = ["apps/*", "crates/*"]
+default-members = ["apps/razerr-rs", "apps/razerr-rs-service"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace.dependencies]
+anyhow = "=1.0.104"
+clap = { version = "=4.6.7", features = ["derive"] }
+directories = "=6.0.0"
+diesel = { version = "=2.3.14", default-features = false, features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = "=2.3.2"
+futures-util = "=0.3.34"
+hex = "=0.4.3"
+iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "x11", "wayland", "tokio", "canvas", "image-without-codecs", "advanced"] }
+iced_aw = { version = "=0.14.1", default-features = false, features = ["number_input", "color_picker"] }
+iced_audio = { version = "=0.17.1", default-features = false, features = ["h_slider", "xy_pad"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
+indexmap = "=2.14.2"
+ksni = "=0.3.7"
+notify-debouncer-mini = "=0.7.0"
+proptest = "=1.12.0"
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "stream"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+tempfile = "=3.27.0"
+thiserror = "=2.0.21"
+sha2 = "=0.11.1"
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "time", "sync", "signal", "process", "fs", "io-util", "net"] }
+toml_edit = { version = "=0.25.17", features = ["serde"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
+zbus = { version = "=6.1.0", default-features = false, features = ["tokio", "proxy", "service", "tracing"] }
+zbus_xml = "=6.0.0"
+razerr-model = { path = "crates/model", version = "=0.1.0" }
+razerr-openrazer = { path = "crates/openrazer", version = "=0.1.0" }
+razerr-storage = { path = "crates/storage", version = "=0.1.0" }
+razerr-metrics = { path = "crates/metrics", version = "=0.1.0" }
+razerr-worker = { path = "crates/worker", version = "=0.1.0" }
+razerr-ipc = { path = "crates/ipc", version = "=0.1.0" }
+razerr-desktop = { path = "crates/desktop", version = "=0.1.0" }
+razerr-images = { path = "crates/images", version = "=0.1.0" }
+razerr-ui = { path = "crates/ui", version = "=0.1.0" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+# Constructors and fallible APIs are pervasive; document their invariants in prose.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"

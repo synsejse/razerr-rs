@@ -1,0 +1,86 @@
+{
+  "revision": 15,
+  "continuity": 3,
+  "daemon_generation": 0,
+  "kind": "live",
+  "devices": [
+    {
+      "serial": "PM2405H30011232",
+      "name": "Razer DeathAdder V3 Pro (Wireless)",
+      "kind": "mouse",
+      "firmware": "v2.0",
+      "driver": "3.12.4",
+      "image": "https://dl.razerzone.com/src/6130/6130-1-en-v2.png",
+      "usb": {
+        "vendor": 5426,
+        "product": 195
+      },
+      "availability": "responding",
+      "capabilities": {
+        "dpi": true,
+        "dpi_stages": true,
+        "available_dpi": false,
+        "poll_rate": true,
+        "supported_poll_rates": true,
+        "battery": true,
+        "charging": true,
+        "idle_time": true,
+        "low_battery_threshold": true,
+        "zones": []
+      },
+      "dpi": {
+        "current": {
+          "state": "fresh",
+          "data": {
+            "x": 1800,
+            "y": 1800
+          }
+        },
+        "range": {
+          "kind": "continuous",
+          "maximum": {
+            "state": "fresh",
+            "data": 35000
+          }
+        }
+      },
+      "stages": {
+        "state": "unavailable"
+      },
+      "polling": {
+        "current": {
+          "state": "fresh",
+          "data": 8000
+        },
+        "supported": [
+          125,
+          500,
+          1000,
+          2000,
+          4000,
+          8000
+        ]
+      },
+      "battery": {
+        "level": {
+          "state": "fresh",
+          "data": 61.1764705882353
+        },
+        "charging": false
+      },
+      "idle_time": {
+        "state": "fresh",
+        "data": 300
+      },
+      "low_battery": {
+        "state": "fresh",
+        "data": 5
+      },
+      "zones": []
+    }
+  ],
+  "refreshing": false,
+  "daemon_available": true,
+  "reliable": true,
+  "error": "PM2405H30011232: getDPIStages: horizontal DPI must be positive"
+}

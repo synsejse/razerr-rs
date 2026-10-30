@@ -1,0 +1,104 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node name="/org/razer/device/PM2405H30011232">
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect">
+      <arg direction="out" type="s" />
+    </method>
+  </interface>
+  <interface name="razer.device.misc">
+    <method name="getDeviceImage">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="resumeDevice">
+    </method>
+    <method name="getRazerUrls">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getDeviceMode">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getSerial">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="hasDedicatedMacroKeys">
+      <arg direction="out" type="b" />
+    </method>
+    <method name="setDeviceMode">
+      <arg direction="in"  type="y" name="mode_id" />
+      <arg direction="in"  type="y" name="param" />
+    </method>
+    <method name="suspendDevice">
+    </method>
+    <method name="getDriverVersion">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getVidPid">
+      <arg direction="out" type="ai" />
+    </method>
+    <method name="getFirmware">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getMatrixDimensions">
+      <arg direction="out" type="ai" />
+    </method>
+    <method name="hasMatrix">
+      <arg direction="out" type="b" />
+    </method>
+    <method name="getDeviceName">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getDeviceType">
+      <arg direction="out" type="s" />
+    </method>
+    <method name="getPollRate">
+      <arg direction="out" type="i" />
+    </method>
+    <method name="setPollRate">
+      <arg direction="in"  type="q" name="rate" />
+    </method>
+  </interface>
+  <interface name="razer.device.lighting.chroma">
+    <method name="restoreLastEffect">
+    </method>
+  </interface>
+  <interface name="razer.device.dpi">
+    <method name="maxDPI">
+      <arg direction="out" type="i" />
+    </method>
+    <method name="getDPI">
+      <arg direction="out" type="ai" />
+    </method>
+    <method name="setDPI">
+      <arg direction="in"  type="q" name="dpi_x" />
+      <arg direction="in"  type="q" name="dpi_y" />
+    </method>
+    <method name="getDPIStages">
+      <arg direction="out" type="(ya(qq))" />
+    </method>
+    <method name="setDPIStages">
+      <arg direction="in"  type="y" name="active_stage" />
+      <arg direction="in"  type="a(qq)" name="dpi_stages" />
+    </method>
+  </interface>
+  <interface name="razer.device.power">
+    <method name="getBattery">
+      <arg direction="out" type="d" />
+    </method>
+    <method name="isCharging">
+      <arg direction="out" type="b" />
+    </method>
+    <method name="getIdleTime">
+      <arg direction="out" type="q" />
+    </method>
+    <method name="setIdleTime">
+      <arg direction="in"  type="q" name="idle_time" />
+    </method>
+    <method name="getLowBatteryThreshold">
+      <arg direction="out" type="y" />
+    </method>
+    <method name="setLowBatteryThreshold">
+      <arg direction="in"  type="y" name="threshold" />
+    </method>
+  </interface>
+</node>

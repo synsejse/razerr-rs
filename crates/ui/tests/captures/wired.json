@@ -1,0 +1,108 @@
+{
+  "revision": 2,
+  "continuity": 0,
+  "daemon_generation": 0,
+  "kind": "full",
+  "devices": [
+    {
+      "serial": "PM2405H30011232",
+      "name": "Razer DeathAdder V3 Pro (Wired)",
+      "kind": "mouse",
+      "firmware": "v2.0",
+      "driver": "3.12.4",
+      "image": "https://dl.razerzone.com/src/6130/6130-1-en-v2.png",
+      "usb": {
+        "vendor": 5426,
+        "product": 194
+      },
+      "availability": "responding",
+      "capabilities": {
+        "dpi": true,
+        "dpi_stages": true,
+        "available_dpi": false,
+        "poll_rate": true,
+        "supported_poll_rates": false,
+        "battery": true,
+        "charging": true,
+        "idle_time": true,
+        "low_battery_threshold": true,
+        "zones": []
+      },
+      "dpi": {
+        "current": {
+          "state": "fresh",
+          "data": {
+            "x": 1800,
+            "y": 1800
+          }
+        },
+        "range": {
+          "kind": "continuous",
+          "maximum": {
+            "state": "fresh",
+            "data": 35000
+          }
+        }
+      },
+      "stages": {
+        "state": "fresh",
+        "data": {
+          "active": 3,
+          "values": [
+            {
+              "x": 400,
+              "y": 400
+            },
+            {
+              "x": 800,
+              "y": 800
+            },
+            {
+              "x": 1600,
+              "y": 1600
+            },
+            {
+              "x": 3200,
+              "y": 3200
+            },
+            {
+              "x": 6400,
+              "y": 6400
+            }
+          ]
+        }
+      },
+      "polling": {
+        "current": {
+          "state": "fresh",
+          "data": 1000
+        },
+        "supported": [
+          125,
+          500,
+          1000
+        ]
+      },
+      "battery": {
+        "level": {
+          "state": "fresh",
+          "data": 60.3921568627451
+        },
+        "charging": true
+      },
+      "idle_time": {
+        "state": "fresh",
+        "data": 300
+      },
+      "low_battery": {
+        "state": "fresh",
+        "data": 5
+      },
+      "zones": []
+    }
+  ],
+  "refreshing": false,
+  "daemon_available": true,
+  "reliable": true,
+  "error": null
+}

@@ -1,0 +1,44 @@
+[advisories]
+version = 2
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "iced 0.14's graphics stack still uses paste; maintenance notice with no patched release. Recheck on iced upgrades." },
+    { id = "RUSTSEC-2026-0192", reason = "iced 0.14's text stack requires ttf-parser; maintenance notice with no patched release. Recheck on iced upgrades." },
+    { id = "RUSTSEC-2026-0370", reason = "ksni 0.3.7 still uses zbus 5/zvariant; our own bus code uses zbus 6. Recheck on ksni upgrades." },
+    { id = "RUSTSEC-2026-0371", reason = "ksni 0.3.7 still uses zbus_names through zbus 5; our own bus code uses zbus 6. Recheck on ksni upgrades." },
+    { id = "RUSTSEC-2026-0372", reason = "ksni 0.3.7 still uses zvariant_derive through zbus 5; our own bus code uses zbus 6. Recheck on ksni upgrades." },
+]
+
+[licenses]
+version = 2
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[licenses.private]
+ignore = true
+
+# XDG path resolution depends on this small MPL-licensed crate.
+[[licenses.exceptions]]
+name = "option-ext"
+allow = ["MPL-2.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

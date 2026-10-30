@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.razerr_rs.Service
+Exec=@PREFIX@/bin/razerr-rs-service
+SystemdService=razerr-rs.service

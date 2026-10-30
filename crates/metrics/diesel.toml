@@ -1,0 +1,6 @@
+[print_schema]
+file = "src/schema.rs"
+filter = { only_tables = ["samples", "intervals"] }
+
+[migrations_directory]
+dir = "migrations"

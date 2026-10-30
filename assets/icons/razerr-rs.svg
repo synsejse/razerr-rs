@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- razerr-rs: a mouse outline in the accent green on a dark tile. -->
+  <rect width="256" height="256" rx="56" fill="#131518"/>
+  <rect x="78" y="38" width="100" height="180" rx="50" fill="none" stroke="#44D62C" stroke-width="14"/>
+  <path d="M128 38V112M78 112H178" fill="none" stroke="#44D62C" stroke-width="10" stroke-linecap="round"/>
+  <rect x="117" y="62" width="22" height="36" rx="11" fill="#44D62C" stroke="#131518" stroke-width="7" paint-order="stroke"/>
+</svg>

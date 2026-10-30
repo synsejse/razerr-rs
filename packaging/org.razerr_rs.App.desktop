@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=razerr-rs
+Comment=Configure OpenRazer devices and battery monitoring
+Exec=@PREFIX@/bin/razerr-rs
+Icon=org.razerr_rs.App
+Terminal=false
+DBusActivatable=true
+Categories=Settings;HardwareSettings;
+Keywords=Razer;OpenRazer;Mouse;Keyboard;DPI;Battery;
+StartupNotify=true
+Actions=settings;quit;
+
+[Desktop Action settings]
+Name=Preferences
+Exec=@PREFIX@/bin/razerr-rs --settings
+
+[Desktop Action quit]
+Name=Quit
+Exec=@PREFIX@/bin/razerr-rs quit

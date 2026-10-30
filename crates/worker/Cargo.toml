@@ -1,0 +1,21 @@
+[package]
+name = "razerr-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+razerr-model.workspace = true
+razerr-openrazer.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+futures-util.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
