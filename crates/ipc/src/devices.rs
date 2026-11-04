@@ -4,6 +4,7 @@ use razerr_model::{
     Command, Dpi, DpiStages, Effect, IdleTime, LowBatteryThreshold, Percent, PollRate, Serial,
     Snapshot,
 };
+use razerr_worker::Request;
 use tokio::sync::{mpsc, watch};
 use zbus::{Connection, fdo, object_server::SignalEmitter};
 
@@ -12,7 +13,7 @@ use crate::{State, decode, encode};
 pub const DEVICES_PATH: &str = "/org/razerr_rs/Devices";
 
 pub struct Devices {
-    commands: mpsc::Sender<Command>,
+    commands: mpsc::Sender<Request>,
     snapshots: watch::Receiver<Arc<Snapshot>>,
 }
 
@@ -21,13 +22,13 @@ fn invalid(error: impl std::fmt::Display) -> fdo::Error {
 }
 
 impl Devices {
-    pub fn new(commands: mpsc::Sender<Command>, snapshots: watch::Receiver<Arc<Snapshot>>) -> Self {
+    pub fn new(commands: mpsc::Sender<Request>, snapshots: watch::Receiver<Arc<Snapshot>>) -> Self {
         Self {
             commands,
             snapshots,
         }
     }
-    fn queue(&self, command: Command) -> fdo::Result<()> {
+    fn check(&self, command: &Command) -> fdo::Result<()> {
         if let Some(serial) = command.serial() {
             let snapshot = self.snapshots.borrow();
             if !snapshot.reliable || !snapshot.daemon_available {
@@ -42,9 +43,20 @@ impl Devices {
                 .ok_or_else(|| invalid("unknown device serial"))?;
             command.validate(device).map_err(invalid)?;
         }
+        Ok(())
+    }
+    /// Replies only once the worker has finished, so a success means the device
+    /// was read back, not just that the command was queued.
+    async fn run(&self, command: Command) -> fdo::Result<()> {
+        self.check(&command)?;
+        let (request, outcome) = Request::new(command);
         self.commands
-            .try_send(command)
-            .map_err(|error| fdo::Error::Failed(format!("worker queue: {error}")))
+            .try_send(request)
+            .map_err(|error| fdo::Error::Failed(format!("worker queue: {error}")))?;
+        outcome
+            .await
+            .map_err(|_| fdo::Error::Failed("device worker stopped".into()))?
+            .map_err(fdo::Error::Failed)
     }
 }
 
@@ -61,58 +73,70 @@ impl Devices {
         self.snapshots.borrow().refreshing
     }
 
-    fn refresh(&self) -> fdo::Result<()> {
-        self.queue(Command::Refresh)
+    async fn refresh(&self) -> fdo::Result<()> {
+        self.run(Command::Refresh).await
     }
-    fn set_dpi(&self, serial: &str, x: u16, y: u16) -> fdo::Result<()> {
-        self.queue(Command::SetDpi {
+    async fn set_dpi(&self, serial: &str, x: u16, y: u16) -> fdo::Result<()> {
+        self.run(Command::SetDpi {
             serial: Serial::new(serial).map_err(invalid)?,
             dpi: Dpi::new(x, y).map_err(invalid)?,
         })
+        .await
     }
-    fn set_dpi_stages(&self, serial: &str, active: u8, stages: Vec<(u16, u16)>) -> fdo::Result<()> {
+    async fn set_dpi_stages(
+        &self,
+        serial: &str,
+        active: u8,
+        stages: Vec<(u16, u16)>,
+    ) -> fdo::Result<()> {
         let values = stages
             .into_iter()
             .map(|(x, y)| Dpi::new(x, y))
             .collect::<Result<Vec<_>, _>>()
             .map_err(invalid)?;
-        self.queue(Command::SetDpiStages {
+        self.run(Command::SetDpiStages {
             serial: Serial::new(serial).map_err(invalid)?,
             stages: DpiStages::new(active, values).map_err(invalid)?,
         })
+        .await
     }
-    fn set_poll_rate(&self, serial: &str, rate: u16) -> fdo::Result<()> {
-        self.queue(Command::SetPollRate {
+    async fn set_poll_rate(&self, serial: &str, rate: u16) -> fdo::Result<()> {
+        self.run(Command::SetPollRate {
             serial: Serial::new(serial).map_err(invalid)?,
             rate: PollRate::new(rate).map_err(invalid)?,
         })
+        .await
     }
-    fn set_idle_time(&self, serial: &str, seconds: u16) -> fdo::Result<()> {
-        self.queue(Command::SetIdleTime {
+    async fn set_idle_time(&self, serial: &str, seconds: u16) -> fdo::Result<()> {
+        self.run(Command::SetIdleTime {
             serial: Serial::new(serial).map_err(invalid)?,
             seconds: IdleTime::new(seconds).map_err(invalid)?,
         })
+        .await
     }
-    fn set_low_battery(&self, serial: &str, percent: u8) -> fdo::Result<()> {
-        self.queue(Command::SetLowBattery {
+    async fn set_low_battery(&self, serial: &str, percent: u8) -> fdo::Result<()> {
+        self.run(Command::SetLowBattery {
             serial: Serial::new(serial).map_err(invalid)?,
             percent: LowBatteryThreshold::new(percent).map_err(invalid)?,
         })
+        .await
     }
-    fn set_brightness(&self, serial: &str, zone: &str, value: f64) -> fdo::Result<()> {
-        self.queue(Command::SetBrightness {
+    async fn set_brightness(&self, serial: &str, zone: &str, value: f64) -> fdo::Result<()> {
+        self.run(Command::SetBrightness {
             serial: Serial::new(serial).map_err(invalid)?,
             zone: zone.parse().map_err(invalid)?,
             brightness: Percent::new(value).map_err(invalid)?,
         })
+        .await
     }
-    fn set_effect(&self, serial: &str, zone: &str, effect: State) -> fdo::Result<()> {
+    async fn set_effect(&self, serial: &str, zone: &str, effect: State) -> fdo::Result<()> {
         let effect: Effect = decode(effect).map_err(invalid)?;
-        self.queue(Command::SetEffect {
+        self.run(Command::SetEffect {
             serial: Serial::new(serial).map_err(invalid)?,
             zone: zone.parse().map_err(invalid)?,
             effect,
         })
+        .await
     }
 
     #[zbus(signal)]

@@ -5,3 +5,4 @@ pub mod cache;
 pub mod queue;
 
 pub use actor::{Worker, WorkerEvent, spawn};
+pub use queue::Request;

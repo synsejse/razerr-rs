@@ -151,6 +151,11 @@ impl Dpi {
     pub fn y(self) -> u16 {
         self.y
     }
+    /// Whether two values mean the same setting. A single-axis device is written
+    /// with Y=0 but can report its one value on both axes.
+    pub fn same_setting(self, other: Self) -> bool {
+        self.x == other.x && (self.y == other.y || self.y == 0 || other.y == 0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -283,6 +288,16 @@ mod tests {
             values: Reading::Unavailable,
         };
         assert!(missing.validate(Dpi::new(900, 0).expect("DPI")).is_err());
+    }
+
+    #[test]
+    fn single_axis_dpi_ignores_how_the_device_reports_y() {
+        let dpi = |x, y| Dpi::new(x, y).expect("DPI");
+        assert!(dpi(900, 0).same_setting(dpi(900, 900)));
+        assert!(dpi(900, 900).same_setting(dpi(900, 0)));
+        assert!(dpi(900, 900).same_setting(dpi(900, 900)));
+        assert!(!dpi(900, 0).same_setting(dpi(800, 800)));
+        assert!(!dpi(900, 900).same_setting(dpi(900, 800)));
     }
 
     #[test]

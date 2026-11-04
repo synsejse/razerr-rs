@@ -3,6 +3,10 @@ use zbus::Connection;
 
 use crate::{DevicesProxy, Error, decode, encode};
 
+/// Long enough for a setter that replies only after its readback settled: a call
+/// to a slow device can take 10 seconds, and several happen per write.
+const METHOD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+
 #[derive(Clone)]
 pub struct Client {
     connection: Connection,
@@ -14,7 +18,7 @@ impl Client {
         let connection = tokio::time::timeout(
             std::time::Duration::from_secs(10),
             zbus::connection::Builder::session()
-                .method_timeout(std::time::Duration::from_secs(10))
+                .method_timeout(METHOD_TIMEOUT)
                 .build(),
         )
         .await
@@ -56,6 +60,7 @@ impl Client {
             .map_err(|error| Error::Invalid(error.to_string()))?;
         Ok(snapshot)
     }
+    /// Runs a command and returns once the service has finished it.
     pub async fn send(&self, command: Command) -> Result<(), Error> {
         let proxy = self.devices().await?;
         match command {

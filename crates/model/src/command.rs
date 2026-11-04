@@ -81,6 +81,46 @@ impl Command {
         }
     }
 
+    /// Whether `device`'s fresh readings show this write took effect, or `None`
+    /// when it has no fresh reading of that setting to compare.
+    pub fn reflected_by(&self, device: &Device) -> Option<bool> {
+        match self {
+            Self::Refresh => Some(true),
+            Self::SetDpi { dpi, .. } => {
+                let actual = device.dpi.as_ref()?.current.fresh()?;
+                Some(dpi.same_setting(*actual))
+            }
+            Self::SetDpiStages { stages, .. } => Some(device.stages.as_ref()?.fresh()? == stages),
+            Self::SetPollRate { rate, .. } => {
+                Some(device.polling.as_ref()?.current.fresh()? == rate)
+            }
+            Self::SetIdleTime { seconds, .. } => {
+                Some(device.idle_time.as_ref()?.fresh()? == seconds)
+            }
+            Self::SetLowBattery { percent, .. } => {
+                Some(device.low_battery.as_ref()?.fresh()? == percent)
+            }
+            Self::SetBrightness {
+                zone, brightness, ..
+            } => {
+                let zone = device
+                    .zones
+                    .iter()
+                    .find(|candidate| candidate.id == *zone)?;
+                let actual = zone.brightness.as_ref()?.fresh()?;
+                // Firmware keeps brightness in 0–255, so percentages round.
+                Some((actual.get() - brightness.get()).abs() < 0.5)
+            }
+            Self::SetEffect { zone, effect, .. } => {
+                let zone = device
+                    .zones
+                    .iter()
+                    .find(|candidate| candidate.id == *zone)?;
+                Some(zone.effect.fresh()? == effect)
+            }
+        }
+    }
+
     pub fn validate(&self, device: &Device) -> Result<(), ValidationError> {
         if matches!(self, Self::Refresh) {
             return Ok(());
@@ -152,5 +192,67 @@ impl Command {
             }
             _ => Err(ValidationError("setting is unsupported")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Capabilities, DpiControl, DpiRange, Polling, Reading};
+
+    fn device() -> Device {
+        Device {
+            serial: Serial::new("command_target").expect("serial"),
+            name: None,
+            kind: None,
+            firmware: None,
+            driver: None,
+            image: None,
+            usb: None,
+            availability: Availability::Responding,
+            capabilities: Capabilities::default(),
+            dpi: Some(DpiControl {
+                current: Reading::Fresh(Dpi::new(800, 800).expect("DPI")),
+                range: DpiRange::Continuous {
+                    maximum: Reading::Fresh(30000),
+                },
+            }),
+            stages: Some(Reading::Unavailable),
+            polling: Some(Polling {
+                current: Reading::Stale {
+                    value: PollRate::new(1000).expect("rate"),
+                    age: std::time::Duration::from_secs(1),
+                },
+                supported: Vec::new(),
+            }),
+            battery: None,
+            idle_time: None,
+            low_battery: None,
+            zones: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn readback_compares_only_fresh_readings() {
+        let device = device();
+        let serial = device.serial.clone();
+        let dpi = |x, y| Command::SetDpi {
+            serial: serial.clone(),
+            dpi: Dpi::new(x, y).expect("DPI"),
+        };
+        assert_eq!(dpi(800, 800).reflected_by(&device), Some(true));
+        assert_eq!(dpi(800, 0).reflected_by(&device), Some(true));
+        assert_eq!(dpi(900, 900).reflected_by(&device), Some(false));
+        // A stale value can't confirm or contradict anything.
+        let rate = Command::SetPollRate {
+            serial: serial.clone(),
+            rate: PollRate::new(1000).expect("rate"),
+        };
+        assert_eq!(rate.reflected_by(&device), None);
+        let stages = Command::SetDpiStages {
+            serial,
+            stages: DpiStages::new(1, vec![Dpi::new(800, 800).expect("DPI")]).expect("stages"),
+        };
+        assert_eq!(stages.reflected_by(&device), None);
     }
 }

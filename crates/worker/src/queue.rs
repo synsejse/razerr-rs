@@ -2,23 +2,65 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use razerr_model::{Availability, Command, CommandKey, Snapshot};
+use tokio::sync::oneshot;
+
+/// A command and whoever is waiting to hear how it ended.
+pub struct Request {
+    pub command: Command,
+    waiting: Vec<oneshot::Sender<Result<(), String>>>,
+}
+
+impl Request {
+    /// Also returns the receiver of the final outcome: the write's readback for a
+    /// setter, and the refresh itself for [`Command::Refresh`].
+    pub fn new(command: Command) -> (Self, oneshot::Receiver<Result<(), String>>) {
+        let (sender, receiver) = oneshot::channel();
+        (
+            Self {
+                command,
+                waiting: vec![sender],
+            },
+            receiver,
+        )
+    }
+    pub(crate) fn finish(self, result: &Result<(), String>) {
+        for sender in self.waiting {
+            let _ = sender.send(result.clone());
+        }
+    }
+}
+
+impl From<Command> for Request {
+    /// A request nobody waits for.
+    fn from(command: Command) -> Self {
+        Self {
+            command,
+            waiting: Vec::new(),
+        }
+    }
+}
 
 /// Execute surviving commands in last-request order. This matters for controls
 /// that interact: activating stages can also change the current DPI.
 #[derive(Default)]
 pub struct Pending {
-    commands: IndexMap<CommandKey, Command>,
+    requests: IndexMap<CommandKey, Request>,
 }
 
 impl Pending {
-    pub fn push(&mut self, command: Command) {
-        self.commands.shift_remove(&command.key());
-        self.commands.insert(command.key(), command);
+    /// A replaced command never runs, so whoever waited for it hears how its
+    /// replacement ended.
+    pub fn push(&mut self, mut request: Request) {
+        let key = request.command.key();
+        if let Some(replaced) = self.requests.shift_remove(&key) {
+            request.waiting.extend(replaced.waiting);
+        }
+        self.requests.insert(key, request);
     }
-    pub fn pop(&mut self) -> Option<Command> {
-        self.commands
+    pub fn pop(&mut self) -> Option<Request> {
+        self.requests
             .shift_remove_index(0)
-            .map(|(_, command)| command)
+            .map(|(_, request)| request)
     }
 }
 
@@ -78,6 +120,10 @@ mod tests {
     use super::*;
     use razerr_model::{Dpi, DpiStages, Serial};
 
+    fn next(queue: &mut Pending) -> Option<Command> {
+        queue.pop().map(|request| request.command)
+    }
+
     #[test]
     fn invalid_stage_read_retries_even_with_healthy_battery() {
         let mut snapshot: Snapshot =
@@ -107,12 +153,26 @@ mod tests {
             dpi: Dpi::new(x, x).expect("DPI"),
         };
         let mut queue = Pending::default();
-        queue.push(command(800));
-        queue.push(Command::Refresh);
-        queue.push(command(1600));
-        assert_eq!(queue.pop(), Some(Command::Refresh));
-        assert_eq!(queue.pop(), Some(command(1600)));
-        assert_eq!(queue.pop(), None);
+        queue.push(command(800).into());
+        queue.push(Command::Refresh.into());
+        queue.push(command(1600).into());
+        assert_eq!(next(&mut queue), Some(Command::Refresh));
+        assert_eq!(next(&mut queue), Some(command(1600)));
+        assert_eq!(next(&mut queue), None);
+    }
+
+    #[test]
+    fn a_replaced_request_hears_how_its_replacement_ended() {
+        let (first, mut replaced) = Request::new(Command::Refresh);
+        let (second, mut latest) = Request::new(Command::Refresh);
+        let mut queue = Pending::default();
+        queue.push(first);
+        queue.push(second);
+        let request = queue.pop().expect("one request");
+        assert!(queue.pop().is_none());
+        request.finish(&Err("Failed".into()));
+        assert_eq!(replaced.try_recv(), Ok(Err("Failed".to_owned())));
+        assert_eq!(latest.try_recv(), Ok(Err("Failed".to_owned())));
     }
 
     #[test]
@@ -127,12 +187,12 @@ mod tests {
             stages: DpiStages::new(1, vec![Dpi::new(1200, 1200).expect("DPI")]).expect("stages"),
         };
         let mut queue = Pending::default();
-        queue.push(dpi(800));
-        queue.push(stages.clone());
-        queue.push(dpi(1600));
-        assert_eq!(queue.pop(), Some(stages));
-        assert_eq!(queue.pop(), Some(dpi(1600)));
-        assert_eq!(queue.pop(), None);
+        queue.push(dpi(800).into());
+        queue.push(stages.clone().into());
+        queue.push(dpi(1600).into());
+        assert_eq!(next(&mut queue), Some(stages));
+        assert_eq!(next(&mut queue), Some(dpi(1600)));
+        assert_eq!(next(&mut queue), None);
     }
 
     #[test]

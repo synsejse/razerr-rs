@@ -3381,6 +3381,7 @@ name = "razerr-ipc"
 version = "0.1.0"
 dependencies = [
  "razerr-model",
+ "razerr-worker",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

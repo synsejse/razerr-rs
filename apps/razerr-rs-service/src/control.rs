@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use razerr_model::{Command, Snapshot};
+use razerr_worker::Request as WorkerRequest;
 use tokio::sync::{mpsc, oneshot, watch};
 
 #[derive(Clone, Copy, Debug)]
@@ -19,7 +20,7 @@ pub struct Request {
 
 pub struct Control {
     pub requests: mpsc::Sender<Request>,
-    pub commands: mpsc::Sender<Command>,
+    pub commands: mpsc::Sender<WorkerRequest>,
     pub snapshots: watch::Receiver<Arc<Snapshot>>,
 }
 
@@ -58,7 +59,7 @@ impl Control {
     }
     async fn refresh(&self) -> zbus::fdo::Result<()> {
         self.commands
-            .send(Command::Refresh)
+            .send(Command::Refresh.into())
             .await
             .map_err(|_| zbus::fdo::Error::Failed("device worker is shutting down".into()))
     }

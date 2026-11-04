@@ -226,7 +226,7 @@ async fn serve() -> Result<()> {
             Some(action) = desktop_actions.recv() => {
                 match action {
                     DesktopAction::Open | DesktopAction::Settings => if let Err(error) = launch_gui(matches!(action, DesktopAction::Settings)) { tracing::warn!(%error, "opening window"); },
-                    DesktopAction::Refresh => { let _ = worker.commands.send(razerr_model::Command::Refresh).await; },
+                    DesktopAction::Refresh => { let _ = worker.commands.send(razerr_model::Command::Refresh.into()).await; },
                     DesktopAction::Stop | DesktopAction::Quit => { keep_window = matches!(action, DesktopAction::Stop); break; }
                 }
             }

@@ -18,8 +18,18 @@ use zbus::{MatchRule, MessageStream, message::Type};
 
 use crate::{
     cache,
-    queue::{Pending, RetrySchedule},
+    queue::{Pending, Request, RetrySchedule},
 };
+
+/// Pauses between readbacks of a write. Firmware can acknowledge a setter before
+/// applying it, so an old value straight after a write proves nothing yet.
+const SETTLE_DELAYS: [Duration; 5] = [
+    Duration::from_millis(150),
+    Duration::from_millis(250),
+    Duration::from_millis(400),
+    Duration::from_millis(600),
+    Duration::from_millis(800),
+];
 
 #[derive(Clone, Debug)]
 pub enum WorkerEvent {
@@ -27,7 +37,7 @@ pub enum WorkerEvent {
 }
 
 pub struct Worker {
-    pub commands: mpsc::Sender<Command>,
+    pub commands: mpsc::Sender<Request>,
     pub snapshots: watch::Receiver<Arc<Snapshot>>,
     pub events: broadcast::Receiver<WorkerEvent>,
     pub task: JoinHandle<()>,
@@ -270,12 +280,30 @@ impl Actor {
         });
     }
 
-    async fn execute(&mut self, command: &Command) {
+    /// A refresh that reached the daemon succeeded, even if some readings failed;
+    /// those stay visible in the snapshot.
+    async fn full_refresh(&mut self) -> Result<(), String> {
+        self.refresh(true).await;
+        if self.state.daemon_available {
+            Ok(())
+        } else {
+            Err(self
+                .state
+                .error
+                .clone()
+                .unwrap_or_else(|| "OpenRazer is unavailable".into()))
+        }
+    }
+
+    /// Runs one write, exactly once, and reports how it ended. A failed or
+    /// unconfirmed write is never repeated, because it may have reached the device.
+    async fn execute(&mut self, command: &Command) -> Result<(), String> {
         if self.sync_owner() {
             self.refresh(true).await;
-            self.error("Device connection changed; repeat the command after refresh".into());
+            let error = "Device connection changed; repeat the command after refresh".to_owned();
+            self.error(error.clone());
             self.publish(SnapshotKind::Ack);
-            return;
+            return Err(error);
         }
         let result = async {
             if !self.state.reliable || !self.state.daemon_available {
@@ -294,17 +322,86 @@ impl Actor {
                 .map_err(|error| error.to_string())
         }
         .await;
-        if let Err(error) = result {
-            // A setter may fail because the transport changed between enqueue
-            // and execution. Rediscover before processing subsequent commands.
-            self.refresh(true).await;
-            self.error(error);
-            self.publish(SnapshotKind::Ack);
-        } else {
+        let result = match result {
             // Re-read after a successful write: stages can alter both DPI axes,
             // and the daemon can normalize settings rather than apply them literally.
-            self.refresh(true).await;
+            Ok(()) => self.confirm(command).await,
+            Err(error) => {
+                // A setter may fail because the transport changed between enqueue
+                // and execution. Rediscover before processing subsequent commands.
+                self.refresh(true).await;
+                Err(error)
+            }
+        };
+        if let Err(error) = &result {
+            self.error(error.clone());
+            self.publish(SnapshotKind::Ack);
         }
+        result
+    }
+
+    /// Reads back until the device shows `command`. No fresh reading to compare
+    /// with is not a failure: nothing contradicts the write.
+    async fn confirm(&mut self, command: &Command) -> Result<(), String> {
+        let mut delays = SETTLE_DELAYS.into_iter();
+        let readback = loop {
+            self.refresh(true).await;
+            let readback = self.readback(command);
+            match next_read(readback, &mut delays) {
+                Some(delay) => tokio::time::sleep(delay).await,
+                None => break readback,
+            }
+        };
+        match readback {
+            Readback::Applied | Readback::Unread => Ok(()),
+            Readback::Different => Err(
+                "The device accepted this change but still reports another value. \
+                 It was not sent again; refresh to check."
+                    .into(),
+            ),
+            Readback::Lost => Err(
+                "The connection dropped while checking this change. It may have \
+                 applied; refresh to check."
+                    .into(),
+            ),
+        }
+    }
+
+    fn readback(&self, command: &Command) -> Readback {
+        if !self.state.daemon_available {
+            return Readback::Lost;
+        }
+        let shown = self
+            .state
+            .devices
+            .iter()
+            .find(|device| Some(&device.serial) == command.serial())
+            .and_then(|device| command.reflected_by(device));
+        match shown {
+            Some(true) => Readback::Applied,
+            Some(false) => Readback::Different,
+            None => Readback::Unread,
+        }
+    }
+}
+
+/// What a device showed after a write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Readback {
+    Applied,
+    Different,
+    /// No fresh reading of that setting.
+    Unread,
+    /// The connection went away, so nothing more can be learned.
+    Lost,
+}
+
+/// How long to wait before reading again, or `None` once `readback` settles the
+/// question or the delays run out.
+fn next_read(readback: Readback, delays: &mut impl Iterator<Item = Duration>) -> Option<Duration> {
+    match readback {
+        Readback::Applied | Readback::Lost => None,
+        Readback::Different | Readback::Unread => delays.next(),
     }
 }
 
@@ -396,7 +493,7 @@ fn needs_discovery(
 }
 
 async fn run(
-    mut commands: mpsc::Receiver<Command>,
+    mut commands: mpsc::Receiver<Request>,
     snapshots: watch::Sender<Arc<Snapshot>>,
     events: broadcast::Sender<WorkerEvent>,
 ) {
@@ -422,9 +519,13 @@ async fn run(
                 pending.push(command);
                 tokio::task::yield_now().await;
                 while let Ok(command) = commands.try_recv() { pending.push(command); }
-                while let Some(command) = pending.pop() {
-                    if matches!(command, Command::Refresh) { actor.refresh(true).await; }
-                    else { actor.execute(&command).await; }
+                while let Some(request) = pending.pop() {
+                    let result = if matches!(request.command, Command::Refresh) {
+                        actor.full_refresh().await
+                    } else {
+                        actor.execute(&request.command).await
+                    };
+                    request.finish(&result);
                     while let Ok(command) = commands.try_recv() { pending.push(command); }
                 }
                 deadline = Instant::now() + retries.next(&actor.state);
@@ -509,8 +610,50 @@ async fn listen_changes(changed: &mpsc::Sender<()>, generation: &AtomicU64) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::needs_discovery;
+    use super::{Readback, SETTLE_DELAYS, needs_discovery, next_read};
     use razerr_model::{Availability, UsbId};
+
+    /// Answers with `readbacks` in turn, repeating the last one, and returns the
+    /// last answer and how many reads it took.
+    fn settle(readbacks: &[Readback]) -> (Readback, usize) {
+        let mut delays = SETTLE_DELAYS.into_iter();
+        let mut reads = 0;
+        loop {
+            reads += 1;
+            let readback = readbacks[(reads - 1).min(readbacks.len() - 1)];
+            if next_read(readback, &mut delays).is_none() {
+                return (readback, reads);
+            }
+        }
+    }
+
+    #[test]
+    fn a_late_readback_is_not_a_failure() {
+        use Readback::{Applied, Different};
+        assert_eq!(settle(&[Different, Different, Applied]), (Applied, 3));
+    }
+
+    #[test]
+    fn an_immediate_readback_needs_no_waiting() {
+        assert_eq!(settle(&[Readback::Applied]), (Readback::Applied, 1));
+    }
+
+    #[test]
+    fn a_value_that_never_arrives_stops_after_the_last_read() {
+        assert_eq!(settle(&[Readback::Different]), (Readback::Different, 6));
+    }
+
+    #[test]
+    fn a_lost_connection_ends_the_wait() {
+        use Readback::{Different, Lost};
+        assert_eq!(settle(&[Different, Lost]), (Lost, 2));
+    }
+
+    #[test]
+    fn a_missing_reading_gets_the_same_chance_to_recover() {
+        use Readback::{Applied, Unread};
+        assert_eq!(settle(&[Unread, Applied]), (Applied, 2));
+    }
 
     #[test]
     fn read_failures_are_concise_and_only_known_unstable_getters_retry() {
