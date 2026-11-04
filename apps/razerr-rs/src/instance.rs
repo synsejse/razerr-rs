@@ -34,7 +34,6 @@ impl Application {
         }
         let action = match action_name {
             "settings" => Activation::Settings,
-            "dark" => Activation::Dark,
             "quit" => Activation::Quit,
             _ => {
                 return Err(zbus::fdo::Error::InvalidArgs(format!(
@@ -58,7 +57,6 @@ impl Application {
 pub async fn acquire(
     sender: mpsc::Sender<Activation>,
     settings: bool,
-    dark: bool,
 ) -> Result<Option<Connection>> {
     match zbus::connection::Builder::session()
         .serve_at(APP_PATH, Application { sender })
@@ -78,13 +76,9 @@ pub async fn acquire(
             let Some(owner) = unique_owner(&connection, APP_NAME).await? else {
                 return Ok(None);
             };
-            if dark {
-                action(&connection, &owner, "dark").await?;
-            }
             if settings {
                 action(&connection, &owner, "settings").await?;
-            }
-            if !dark && !settings {
+            } else {
                 connection
                     .call_method(
                         Some(owner.as_str()),

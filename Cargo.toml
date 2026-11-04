@@ -19,11 +19,12 @@ futures-util = "=0.3.34"
 hex = "=0.4.3"
 iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "x11", "wayland", "tokio", "canvas", "image-without-codecs", "advanced"] }
 iced_aw = { version = "=0.14.1", default-features = false, features = ["number_input", "color_picker"] }
-iced_audio = { version = "=0.17.1", default-features = false, features = ["h_slider", "xy_pad"] }
+iced_t3 = { path = "crates/iced_t3", version = "=0.1.0" }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 indexmap = "=2.14.2"
 ksni = "=0.3.7"
 notify-debouncer-mini = "=0.7.0"
+pollster = "=0.4.0"
 proptest = "=1.12.0"
 reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "stream"] }
 serde = { version = "=1.0.229", features = ["derive"] }

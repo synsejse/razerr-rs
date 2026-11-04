@@ -1,34 +1,71 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use razerr_model::{
     Device, Direction, Dpi, DpiStages, Effect, EffectKind, Rgb, Serial, Snapshot, Speed, ZoneId,
 };
 use razerr_storage::Settings;
 
+/// A group of device drafts that are applied together.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Section {
     Lighting,
     Sensitivity,
     Power,
-    Insights,
 }
 
 impl Section {
-    pub const ALL: [Self; 4] = [
-        Self::Sensitivity,
-        Self::Lighting,
-        Self::Power,
-        Self::Insights,
-    ];
+    pub const ALL: [Self; 3] = [Self::Sensitivity, Self::Lighting, Self::Power];
     pub fn title(self) -> &'static str {
         match self {
             Self::Lighting => "Lighting",
             Self::Sensitivity => "Sensitivity",
             Self::Power => "Power",
-            Self::Insights => "Battery history",
+        }
+    }
+}
+
+/// A page of the selected device.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Page {
+    #[default]
+    Sensitivity,
+    Lighting,
+    Power,
+    Device,
+}
+
+impl Page {
+    pub const ALL: [Self; 4] = [Self::Sensitivity, Self::Lighting, Self::Power, Self::Device];
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Sensitivity => "Sensitivity",
+            Self::Lighting => "Lighting",
+            Self::Power => "Power",
+            Self::Device => "Device",
+        }
+    }
+    /// Whether `device` has anything to show on this page.
+    pub fn available(self, device: &Device) -> bool {
+        match self {
+            Self::Sensitivity => {
+                device.dpi.is_some() || device.capabilities.dpi_stages || device.polling.is_some()
+            }
+            Self::Lighting => !device.capabilities.zones.is_empty(),
+            Self::Power => {
+                device.battery.is_some()
+                    || device.idle_time.is_some()
+                    || device.low_battery.is_some()
+            }
+            Self::Device => true,
+        }
+    }
+    /// The drafts this page edits.
+    pub fn section(self) -> Option<Section> {
+        match self {
+            Self::Sensitivity => Some(Section::Sensitivity),
+            Self::Lighting => Some(Section::Lighting),
+            Self::Power => Some(Section::Power),
+            Self::Device => None,
         }
     }
 }
@@ -219,8 +256,6 @@ pub struct Editor {
     pub active: u8,
     pub stages_dirty: bool,
     pub target: Target,
-    pub poll: Option<u16>,
-    pub poll_dirty: bool,
     pub idle: String,
     pub idle_dirty: bool,
     pub threshold: String,
@@ -368,13 +403,6 @@ impl Editor {
         {
             self.stages_dirty = false;
         }
-        let polling = device.polling.as_ref();
-        if polling
-            .and_then(|polling| polling.current.fresh())
-            .is_some_and(|actual| self.poll == Some(actual.get()))
-        {
-            self.poll_dirty = false;
-        }
         if !self.dpi_dirty
             && let Some(dpi) = device.dpi.as_ref().and_then(|dpi| dpi.current.displayed())
         {
@@ -393,11 +421,6 @@ impl Editor {
                 .iter()
                 .map(|dpi| (dpi.x().to_string(), dpi.y().to_string()))
                 .collect();
-        }
-        if !self.poll_dirty {
-            self.poll = polling
-                .and_then(|polling| polling.current.displayed())
-                .map(|rate| rate.get());
         }
         self.settle_target();
     }
@@ -487,16 +510,25 @@ impl Editor {
         }
     }
 
+    /// The sleep timeout, or `None` if the device hasn't reported one.
+    pub fn idle_seconds(&self) -> Option<u16> {
+        self.idle.parse().ok()
+    }
+
+    /// The low-battery threshold, or `None` if the device hasn't reported one.
+    pub fn threshold_percent(&self) -> Option<u8> {
+        self.threshold.parse().ok()
+    }
+
     /// Whether a section has edits that have not been applied yet.
     pub fn dirty(&self, section: Section) -> bool {
         match section {
-            Section::Sensitivity => self.dpi_dirty || self.stages_dirty || self.poll_dirty,
+            Section::Sensitivity => self.dpi_dirty || self.stages_dirty,
             Section::Lighting => self
                 .zones
                 .values()
                 .any(|zone| zone.effect_dirty || zone.brightness_dirty),
             Section::Power => self.idle_dirty || self.threshold_dirty,
-            Section::Insights => false,
         }
     }
 
@@ -506,7 +538,6 @@ impl Editor {
             Section::Sensitivity => {
                 self.dpi_dirty = false;
                 self.stages_dirty = false;
-                self.poll_dirty = false;
             }
             Section::Lighting => {
                 for zone in self.zones.values_mut() {
@@ -518,7 +549,6 @@ impl Editor {
                 self.idle_dirty = false;
                 self.threshold_dirty = false;
             }
-            Section::Insights => {}
         }
     }
 
@@ -557,7 +587,7 @@ impl Editor {
 
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "Independent connection, preferences, save and modal state flags"
+    reason = "Independent connection, preferences and modal state flags"
 )]
 pub struct State {
     pub snapshot: Arc<Snapshot>,
@@ -566,20 +596,17 @@ pub struct State {
     pub connected: bool,
     pub received: bool,
     pub preferences: bool,
+    pub page: Page,
     pub settings: Settings,
     pub draft: Preferences,
-    pub saved: bool,
-    pub saving: bool,
-    pub dark_override: bool,
     pub error: Option<String>,
     pub dismissed_error: Option<String>,
-    pub collapsed: HashSet<Section>,
     pub confirmation: Option<Confirmation>,
     pub confirm_focused: bool,
 }
 
 impl State {
-    pub fn new(settings: Settings, dark_override: bool, preferences: bool) -> Self {
+    pub fn new(settings: Settings, preferences: bool) -> Self {
         Self {
             snapshot: Arc::new(Snapshot::default()),
             selected: None,
@@ -587,14 +614,11 @@ impl State {
             connected: false,
             received: false,
             preferences,
+            page: Page::default(),
             draft: settings.clone().into(),
             settings,
-            saved: false,
-            saving: false,
-            dark_override,
             error: None,
             dismissed_error: None,
-            collapsed: HashSet::new(),
             confirmation: None,
             confirm_focused: false,
         }
@@ -604,6 +628,19 @@ impl State {
             .devices
             .iter()
             .find(|device| Some(&device.serial) == self.selected.as_ref())
+    }
+    /// The page to show: the chosen one, or the first the selected device has.
+    pub fn current_page(&self) -> Page {
+        self.selected().map_or(self.page, |device| {
+            if self.page.available(device) {
+                self.page
+            } else {
+                Page::ALL
+                    .into_iter()
+                    .find(|page| page.available(device))
+                    .unwrap_or(Page::Device)
+            }
+        })
     }
     pub fn controls_enabled(&self) -> bool {
         self.connected
@@ -686,8 +723,7 @@ impl State {
     }
 
     pub fn finish_save(&mut self, settings: Settings) {
-        self.saved = self.draft.validated().as_ref() == Ok(&settings);
-        if self.saved {
+        if self.draft.validated().as_ref() == Ok(&settings) {
             self.draft = settings.clone().into();
         }
         self.settings = settings;
@@ -727,7 +763,7 @@ mod tests {
                 .expect("actual wireless handoff snapshot");
         wired.validate().expect("valid wired capture");
         wireless.validate().expect("valid wireless capture");
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         state.receive(Arc::new(wired));
         let serial = state.selected.clone();
         assert_eq!(state.editor.stages.len(), 5);
@@ -742,7 +778,7 @@ mod tests {
     }
     #[test]
     fn preferences_require_valid_ranges_and_keep_draft_separate() {
-        let state = State::new(Settings::default(), false, false);
+        let state = State::new(Settings::default(), false);
         let mut draft = state.draft.clone();
         draft.days = "6".into();
         assert!(draft.validated().is_err());
@@ -753,7 +789,7 @@ mod tests {
     }
     #[test]
     fn confirmations_start_on_cancel_and_escape_does_not_change_settings() {
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         state.open_confirmation(Confirmation::Defaults);
         assert!(!state.confirm_focused);
         state.cancel();
@@ -788,7 +824,7 @@ mod tests {
 
     #[test]
     fn clearing_a_reported_error_allows_the_same_later_failure_to_be_shown() {
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         let failed = Arc::new(Snapshot {
             error: Some("Service unavailable".into()),
             ..Snapshot::default()
@@ -887,6 +923,31 @@ mod tests {
     }
 
     #[test]
+    fn settings_that_could_not_be_read_stay_unknown() {
+        let mut device = wired_device();
+        let mut editor = Editor::default();
+        editor.sync(&device);
+        assert_eq!(editor.idle_seconds(), Some(300));
+        assert_eq!(editor.threshold_percent(), Some(5));
+        device.idle_time = Some(razerr_model::Reading::Unavailable);
+        device.low_battery = Some(razerr_model::Reading::Unavailable);
+        let mut editor = Editor::default();
+        editor.sync(&device);
+        assert_eq!(editor.idle_seconds(), None);
+        assert_eq!(editor.threshold_percent(), None);
+    }
+
+    #[test]
+    fn a_page_the_device_lacks_falls_back_to_one_it_has() {
+        let mut state = State::new(Settings::default(), false);
+        state.receive(Arc::new(wired_snapshot()));
+        state.page = Page::Lighting;
+        assert_eq!(state.current_page(), Page::Sensitivity, "no lighting zones");
+        state.page = Page::Power;
+        assert_eq!(state.current_page(), Page::Power);
+    }
+
+    #[test]
     fn relinking_equal_axes_is_not_an_edit() {
         let mut editor = Editor {
             x: "800".into(),
@@ -933,7 +994,7 @@ mod tests {
 
     #[test]
     fn selecting_the_selected_device_keeps_its_drafts() {
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         state.receive(Arc::new(wired_snapshot()));
         state.editor.x = "2000".into();
         state.editor.dpi_dirty = true;
@@ -947,22 +1008,18 @@ mod tests {
 
     #[test]
     fn save_result_keeps_edits_made_while_the_write_was_running() {
-        let mut state = State::new(Settings::default(), true, true);
+        let mut state = State::new(Settings::default(), true);
         state.draft.days = "30".into();
         let written = state.draft.validated().expect("valid settings");
         state.draft.days = "60".into();
         state.finish_save(written);
         assert_eq!(state.settings.history.days, 30);
         assert_eq!(state.draft.days, "60");
-        assert!(!state.saved);
-        assert!(state.dark_override);
-        state.finish_save(state.draft.validated().expect("latest draft"));
-        assert!(state.saved);
     }
 
     #[test]
     fn older_revisions_are_ignored_and_selection_survives_pending_discovery() {
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         state.selected = Some(Serial::new("selected").expect("identifier"));
         state.receive(Arc::new(Snapshot {
             revision: 10,

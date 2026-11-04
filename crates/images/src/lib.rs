@@ -190,6 +190,23 @@ fn dimensions(width: u32, height: u32) -> Result<(), Error> {
 }
 
 /// Decode only after checking both codec limits and the total pixel count.
+/// Decodes a bundled image and scales it down to a `size`-pixel square, so a small
+/// on-screen copy doesn't keep the full image around or get resampled every frame.
+pub fn thumbnail(bytes: &[u8], size: u32) -> Result<RgbaImage, Error> {
+    let RgbaImage {
+        width,
+        height,
+        pixels,
+    } = decode(bytes)?;
+    let source = image::RgbaImage::from_raw(width, height, pixels)
+        .ok_or(Error::Dimensions { width, height })?;
+    Ok(RgbaImage {
+        width: size,
+        height: size,
+        pixels: image::imageops::thumbnail(&source, size, size).into_raw(),
+    })
+}
+
 pub fn decode(bytes: &[u8]) -> Result<RgbaImage, Error> {
     if bytes.len() > MAX_BYTES {
         return Err(Error::TooLarge);

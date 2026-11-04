@@ -1,136 +1,124 @@
-use super::{caption, divider, icon};
+use super::{APP_ICON, ICON_SIZE, device_glyph, device_name};
 use crate::{
     app::{App, Message},
-    keyboard_button,
-    style::{self, Icon},
+    state::Page,
 };
 use iced::{
-    Alignment, Element, Fill, Length,
-    widget::{Column, Space, button, column, container, image, row, scrollable, text},
+    Element, Fill,
+    widget::{Column, Space, column, container, image, row},
 };
-use razerr_model::Device;
+use iced_t3::{chrome, font, icon, widget as t3};
+use razerr_model::{Availability, Device};
 
 impl App {
+    /// Navigation, with the device at the foot.
     pub(super) fn sidebar(&self) -> Element<'_, Message> {
-        let brand = row![
-            image(self.icon.clone()).width(26).height(26),
-            text("razerr-rs").font(style::SEMIBOLD).size(17)
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center);
-
-        let mut devices = Column::new().spacing(4);
-        for device in &self.state.snapshot.devices {
-            devices = devices.push(self.device_tile(device));
+        let header = chrome::drag_region(
+            container(
+                row![
+                    image(APP_ICON.clone()).width(ICON_SIZE).height(ICON_SIZE),
+                    Space::new().width(4),
+                    t3::text("razerr-rs", 14).font(font::SEMIBOLD),
+                ]
+                .spacing(5)
+                .align_y(iced::Center),
+            )
+            .padding([0, 10])
+            .center_y(44)
+            .width(Fill),
+            Message::Window,
+        );
+        let device = self.state.selected();
+        let page = self.state.current_page();
+        let mut nav = Column::new().spacing(2);
+        if let Some(device) = device {
+            for item in Page::ALL.into_iter().filter(|item| item.available(device)) {
+                nav = nav.push(t3::sidebar_nav(
+                    item.title(),
+                    item.glyph(),
+                    item.title(),
+                    !self.state.preferences && page == item,
+                    Some(Message::Page(item)),
+                ));
+            }
         }
-        if self.state.snapshot.devices.is_empty() {
-            devices = devices.push(container(caption("No devices")).padding([6, 10]));
-        }
-
-        let refreshing = self.state.snapshot.refreshing;
-        let footer = column![
-            super::tip(
-                nav(
-                    "refresh",
-                    Icon::Refresh,
-                    if refreshing {
-                        "Refreshing…"
-                    } else {
-                        "Refresh devices"
-                    },
-                    (!refreshing && self.state.connected).then_some(Message::Refresh),
-                ),
-                "Ctrl+R",
-            ),
-            nav(
-                "preferences",
-                Icon::Settings,
-                "Preferences",
-                Some(Message::Preferences),
-            ),
-        ]
-        .spacing(2);
-
-        container(
-            column![
-                container(brand).padding([4, 8]),
-                Space::new().height(18),
-                container(caption("DEVICES").size(11)).padding([0, 10]),
-                Space::new().height(6),
-                scrollable(devices).height(Fill),
-                divider(),
-                footer,
-            ]
-            .spacing(6),
-        )
-        .width(260)
-        .height(Fill)
-        .padding([20, 12])
-        .style(style::sidebar)
-        .into()
+        nav = nav.push(t3::sidebar_nav(
+            "preferences",
+            icon::SETTINGS,
+            "Preferences",
+            self.state.preferences,
+            Some(Message::Preferences),
+        ));
+        t3::sidebar(header, nav, self.device_footer())
     }
 
-    fn device_tile<'a>(&'a self, device: &'a Device) -> Element<'a, Message> {
-        let selected =
-            !self.state.preferences && self.state.selected.as_ref() == Some(&device.serial);
-        let thumbnail: Element<'_, Message> = if let Some(handle) = device
+    fn device_footer(&self) -> Element<'_, Message> {
+        let devices = &self.state.snapshot.devices;
+        let mut rows = Column::new().spacing(1);
+        for device in devices {
+            let selected =
+                !self.state.preferences && self.state.selected.as_ref() == Some(&device.serial);
+            rows = rows.push(t3::sidebar_device(
+                format!("device-{}", device.serial),
+                self.device_picture(device),
+                device_name(device),
+                device_detail(device),
+                selected,
+                (devices.len() > 1).then(|| Message::Select(device.serial.clone())),
+            ));
+        }
+        if devices.is_empty() {
+            rows = rows.push(t3::sidebar_device(
+                "device-none",
+                t3::icon_tile(icon::MOUSE, 32),
+                "No device",
+                if self.state.connected {
+                    "Nothing connected"
+                } else {
+                    "Waiting for the service"
+                },
+                false,
+                None,
+            ));
+        }
+        column![t3::divider(), container(rows).padding([6, 0])].into()
+    }
+
+    /// The device's picture once it has loaded, otherwise a glyph for its type.
+    pub(super) fn device_picture<'a>(&self, device: &Device) -> Element<'a, Message> {
+        device
             .image
             .as_ref()
             .and_then(|source| self.images.get(source))
-        {
-            image(handle.clone())
-                .width(40)
-                .height(40)
-                .content_fit(iced::ContentFit::Contain)
-                .into()
-        } else {
-            container(icon(Icon::for_kind(device.kind.as_deref())).size(18))
-                .center_x(Length::Fixed(40.0))
-                .center_y(Length::Fixed(40.0))
-                .style(style::chip)
-                .into()
-        };
-        let mut details =
-            column![text(device.name.as_deref().unwrap_or(device.serial.as_str())).size(13),]
-                .spacing(3);
-        let mut meta = row![caption(kind_label(device.kind.as_deref()))]
-            .spacing(6)
-            .align_y(Alignment::Center);
-        if let Some(level) = device
-            .battery
-            .as_ref()
-            .and_then(|battery| battery.level.displayed())
-        {
-            let charging = device
-                .battery
-                .as_ref()
-                .is_some_and(|battery| battery.charging == Some(true));
-            meta = meta.push(caption("·")).push(
-                icon(if charging {
-                    Icon::BatteryCharging
-                } else {
-                    Icon::Battery
-                })
-                .size(13)
-                .style(style::muted),
-            );
-            meta = meta.push(caption(format!("{:.0}%", level.get())));
+            .map_or_else(
+                || t3::icon_tile(device_glyph(device.kind.as_deref()), 32),
+                |handle| {
+                    container(
+                        image(handle.clone())
+                            .width(32)
+                            .height(32)
+                            .content_fit(iced::ContentFit::Contain),
+                    )
+                    .into()
+                },
+            )
+    }
+}
+
+fn device_detail(device: &Device) -> String {
+    if device.availability == Availability::Unavailable {
+        return "Unavailable".into();
+    }
+    let kind = kind_label(device.kind.as_deref());
+    let Some(battery) = &device.battery else {
+        return kind;
+    };
+    match battery.level.displayed() {
+        Some(level) if battery.charging == Some(true) => {
+            format!("{kind} · {:.0}% · Charging", level.get())
         }
-        if device.availability == razerr_model::Availability::Unavailable {
-            meta = meta.push(caption("· Unavailable"));
-        }
-        details = details.push(meta);
-        let message = Message::Select(device.serial.clone());
-        let control = button(
-            row![thumbnail, details.width(Fill)]
-                .spacing(12)
-                .align_y(Alignment::Center),
-        )
-        .padding([8, 10])
-        .width(Fill)
-        .style(style::tile(selected))
-        .on_press(message.clone());
-        keyboard_button::wrap(format!("device-{}", device.serial), control, Some(message))
+        Some(level) => format!("{kind} · {:.0}%", level.get()),
+        None => kind,
     }
 }
 
@@ -140,23 +128,4 @@ pub fn kind_label(kind: Option<&str>) -> String {
     letters.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(letters).collect()
     })
-}
-
-/// A full-width sidebar action.
-fn nav(
-    id: &'static str,
-    glyph: Icon,
-    label: &'static str,
-    message: Option<Message>,
-) -> Element<'static, Message> {
-    let control = button(
-        row![icon(glyph).size(15), text(label).size(14)]
-            .spacing(10)
-            .align_y(Alignment::Center),
-    )
-    .width(Fill)
-    .padding([8, 12])
-    .style(style::ghost)
-    .on_press_maybe(message.clone());
-    keyboard_button::wrap(id, control, message)
 }

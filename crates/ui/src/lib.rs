@@ -1,16 +1,20 @@
-//! Basic iced views for the service-owned device model.
+//! The iced window over the service-owned device model, on the `iced_t3` design.
 
+mod activity;
 mod app;
 mod chart;
+mod curve;
+mod demo;
 mod dpi_pad;
 mod edit;
 mod history;
-mod keyboard_button;
+#[cfg(test)]
+mod render_tests;
 mod state;
-mod style;
 mod subscriptions;
 mod view;
 
+use iced::{Size, Task, window};
 use razerr_storage::{Paths, Settings};
 use tokio::sync::mpsc;
 
@@ -19,7 +23,6 @@ use tokio::sync::mpsc;
 pub struct Options {
     pub paths: Paths,
     pub settings: Settings,
-    pub dark_override: bool,
     pub show_settings: bool,
     pub initial_error: Option<String>,
 }
@@ -28,44 +31,41 @@ pub struct Options {
 pub enum Activation {
     Present,
     Settings,
-    Dark,
     Quit,
 }
 
 /// Run the desktop window. D-Bus instance ownership stays with the caller.
 pub fn run(options: Options, receiver: mpsc::Receiver<Activation>) -> iced::Result {
     let activations = subscriptions::Activations::new(receiver);
-    let icon = razerr_images::decode(include_bytes!("../../../assets/icons/razerr-rs.png"))
+    launch(move || app::App::new(options.clone(), activations.clone()))
+}
+
+/// Run the window on made-up devices, without the service, D-Bus or any files.
+pub fn run_demo() -> iced::Result {
+    launch(|| (app::App::demo(), Task::none()))
+}
+
+fn launch(boot: impl Fn() -> (app::App, Task<app::Message>) + 'static) -> iced::Result {
+    let icon = razerr_images::decode(view::ICON_PNG)
         .ok()
-        .and_then(|image| {
-            iced::window::icon::from_rgba(image.pixels, image.width, image.height).ok()
-        });
-    iced::application(
-        move || app::App::new(options.clone(), activations.clone()),
-        app::App::update,
-        app::App::view,
-    )
-    .title("razerr-rs")
-    .theme(app::App::theme)
-    .subscription(app::App::subscription)
-    .settings(iced::Settings {
-        default_font: style::REGULAR,
-        ..iced::Settings::default()
-    })
-    .font(iced_aw::ICED_AW_FONT_BYTES)
-    .font(include_bytes!("../../../assets/fonts/inter/Inter-Regular.ttf").as_slice())
-    .font(include_bytes!("../../../assets/fonts/inter/Inter-SemiBold.ttf").as_slice())
-    .font(include_bytes!("../../../assets/fonts/lucide/Lucide.ttf").as_slice())
-    .window(iced::window::Settings {
-        size: iced::Size::new(1120.0, 780.0),
-        min_size: Some(iced::Size::new(820.0, 560.0)),
-        exit_on_close_request: false,
-        icon,
-        platform_specific: iced::window::settings::PlatformSpecific {
-            application_id: "org.razerr_rs.App".into(),
-            ..Default::default()
-        },
-        ..iced::window::Settings::default()
-    })
-    .run()
+        .and_then(|image| window::icon::from_rgba(image.pixels, image.width, image.height).ok());
+    iced::application(boot, app::App::update, app::App::view)
+        .title("razerr-rs")
+        .theme(|_: &app::App| iced_t3::theme())
+        .subscription(app::App::subscription)
+        .settings(iced_t3::settings())
+        .font(iced_aw::ICED_AW_FONT_BYTES)
+        .window(window::Settings {
+            size: Size::new(1120.0, 780.0),
+            min_size: Some(Size::new(820.0, 560.0)),
+            exit_on_close_request: false,
+            icon,
+            // Matches the desktop entry, so the taskbar shows the app's icon.
+            platform_specific: window::settings::PlatformSpecific {
+                application_id: "org.razerr_rs.App".into(),
+                ..Default::default()
+            },
+            ..iced_t3::chrome::window_settings()
+        })
+        .run()
 }

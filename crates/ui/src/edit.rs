@@ -1,7 +1,5 @@
 use iced::Task;
-use razerr_model::{
-    Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, PollRate, Serial,
-};
+use razerr_model::{Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, Serial};
 
 use crate::{
     app::{App, Edit, Message},
@@ -17,8 +15,15 @@ impl App {
             );
             return Task::none();
         }
+        let section = match edit {
+            Edit::Apply(section) => Some(section),
+            _ => None,
+        };
         match command(&mut self.state, edit) {
-            Ok(commands) => self.send_all(commands),
+            Ok(commands) => match section {
+                Some(section) => self.apply(section, commands),
+                None => Task::none(),
+            },
             Err(error) => {
                 self.state.error = Some(error);
                 Task::none()
@@ -30,19 +35,25 @@ impl App {
 /// Edits only change drafts; `Edit::Apply` turns a section's drafts into
 /// validated commands. Nothing is sent if any of them is invalid.
 fn command(state: &mut State, edit: Edit) -> Result<Vec<Command>, String> {
-    let serial = state.selected.clone().ok_or("No device selected")?;
-    let device = state.selected().ok_or("Device was removed")?.clone();
     if let Edit::Apply(section) = edit {
-        let commands = apply(&state.editor, &serial, &device, section)?;
-        for command in &commands {
-            command
-                .validate(&device)
-                .map_err(|error| error.to_string())?;
-        }
-        return Ok(commands);
+        return commands(state, section);
     }
+    let device = state.selected().ok_or("Device was removed")?.clone();
     draft(&mut state.editor, &device, edit)?;
     Ok(Vec::new())
+}
+
+/// The validated commands for `section`'s drafts, or why they can't be sent.
+pub(crate) fn commands(state: &State, section: Section) -> Result<Vec<Command>, String> {
+    let serial = state.selected.clone().ok_or("No device selected")?;
+    let device = state.selected().ok_or("Device was removed")?;
+    let commands = apply(&state.editor, &serial, device, section)?;
+    for command in &commands {
+        command
+            .validate(device)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(commands)
 }
 
 fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String> {
@@ -54,11 +65,9 @@ fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String>
         }
         Edit::Target(target) => editor.select_target(target),
         Edit::Axis(axis, value) => editor.set_axis(axis, value)?,
-        Edit::AxisGesture(axis, gesture) => {
-            if let Some(normal) = gesture.new_normal() {
-                let maximum = continuous_maximum(device).ok_or("The DPI range is unavailable")?;
-                editor.set_axis(axis, dpi_pad::dpi_at(normal.as_f32(), maximum).to_string())?;
-            }
+        Edit::AxisPosition(axis, position) => {
+            let maximum = continuous_maximum(device).ok_or("The DPI range is unavailable")?;
+            editor.set_axis(axis, dpi_pad::dpi_at(position, maximum).to_string())?;
         }
         Edit::Vector(x, y) => editor.set_vector(x, y)?,
         Edit::Linked(value) => editor.set_linked(value)?,
@@ -79,10 +88,6 @@ fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String>
             }
         }
         Edit::RemoveStage(index) => editor.remove_stage(index),
-        Edit::Poll(rate) => {
-            editor.poll = Some(rate);
-            editor.poll_dirty = true;
-        }
         Edit::Idle(value) => {
             editor.idle = value;
             editor.idle_dirty = true;
@@ -160,14 +165,6 @@ fn apply(
                     dpi: editor.dpi(device.capabilities.available_dpi)?,
                 });
             }
-            if editor.poll_dirty
-                && let Some(rate) = editor.poll
-            {
-                commands.push(Command::SetPollRate {
-                    serial: id(),
-                    rate: PollRate::new(rate).map_err(|error| error.to_string())?,
-                });
-            }
         }
         Section::Lighting => {
             let mut zones: Vec<_> = editor.zones.iter().collect();
@@ -216,7 +213,6 @@ fn apply(
                 });
             }
         }
-        Section::Insights => {}
     }
     Ok(commands)
 }
@@ -239,7 +235,7 @@ mod tests {
     fn wired() -> State {
         let snapshot: Snapshot = serde_json::from_str(include_str!("../tests/captures/wired.json"))
             .expect("actual wired snapshot");
-        let mut state = State::new(Settings::default(), false, false);
+        let mut state = State::new(Settings::default(), false);
         state.receive(Arc::new(snapshot));
         state
     }
@@ -249,12 +245,9 @@ mod tests {
         let mut state = wired();
         for edit in [
             Edit::Vector(800, 800),
-            Edit::AxisGesture(Axis::X, iced_audio::Gesture::GestureStart),
-            Edit::AxisGesture(Axis::X, iced_audio::Gesture::Gesturing(0.5.into())),
-            Edit::AxisGesture(Axis::X, iced_audio::Gesture::GestureEnd),
+            Edit::AxisPosition(Axis::X, 0.5),
             Edit::Axis(Axis::Y, "1200".into()),
             Edit::ActiveStage(1),
-            Edit::Poll(500),
             Edit::Idle("600".into()),
         ] {
             assert_eq!(
@@ -268,11 +261,7 @@ mod tests {
         let commands = command(&mut state, Edit::Apply(Section::Sensitivity)).expect("apply");
         assert!(matches!(
             commands.as_slice(),
-            [
-                Command::SetDpiStages { .. },
-                Command::SetDpi { .. },
-                Command::SetPollRate { .. }
-            ]
+            [Command::SetDpiStages { .. }, Command::SetDpi { .. }]
         ));
         let power = command(&mut state, Edit::Apply(Section::Power)).expect("apply");
         assert!(matches!(power.as_slice(), [Command::SetIdleTime { .. }]));
@@ -281,7 +270,7 @@ mod tests {
     #[test]
     fn an_invalid_draft_blocks_the_whole_section() {
         let mut state = wired();
-        command(&mut state, Edit::Poll(500)).expect("draft");
+        command(&mut state, Edit::ActiveStage(1)).expect("draft");
         command(&mut state, Edit::Axis(Axis::X, "fast".into())).expect("draft");
         assert!(command(&mut state, Edit::Apply(Section::Sensitivity)).is_err());
     }
@@ -289,11 +278,11 @@ mod tests {
     #[test]
     fn reverting_a_section_restores_reported_values_and_keeps_others() {
         let mut state = wired();
-        let reported = state.editor.poll;
-        command(&mut state, Edit::Poll(125)).expect("draft");
+        let reported = state.editor.active;
+        command(&mut state, Edit::ActiveStage(1)).expect("draft");
         command(&mut state, Edit::Threshold("20".into())).expect("draft");
         state.revert(Some(Section::Sensitivity));
-        assert_eq!(state.editor.poll, reported);
+        assert_eq!(state.editor.active, reported);
         assert!(!state.editor.dirty(Section::Sensitivity));
         assert!(
             state.editor.dirty(Section::Power),

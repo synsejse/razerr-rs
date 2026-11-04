@@ -1,0 +1,245 @@
+{
+  "revision": 1,
+  "continuity": 0,
+  "daemon_generation": 0,
+  "kind": "full",
+  "devices": [
+    {
+      "serial": "DEMO0000000001",
+      "name": "Demo Wireless Mouse",
+      "kind": "mouse",
+      "firmware": "v2.0",
+      "driver": "3.12.4",
+      "image": null,
+      "usb": {
+        "vendor": 5426,
+        "product": 195
+      },
+      "availability": "responding",
+      "capabilities": {
+        "dpi": true,
+        "dpi_stages": true,
+        "available_dpi": false,
+        "poll_rate": true,
+        "supported_poll_rates": true,
+        "battery": true,
+        "charging": true,
+        "idle_time": true,
+        "low_battery_threshold": true,
+        "zones": [
+          {
+            "id": "logo",
+            "effects": [
+              "off",
+              "static",
+              "spectrum",
+              "wave",
+              "breath",
+              "breath_dual",
+              "breath_random",
+              "reactive"
+            ],
+            "brightness": true,
+            "effect_name": true,
+            "effect_colors": true,
+            "effect_speed": true,
+            "wave_direction": true
+          },
+          {
+            "id": "scroll",
+            "effects": [
+              "off",
+              "static",
+              "spectrum",
+              "wave",
+              "breath",
+              "breath_dual",
+              "breath_random",
+              "reactive"
+            ],
+            "brightness": true,
+            "effect_name": true,
+            "effect_colors": true,
+            "effect_speed": true,
+            "wave_direction": true
+          }
+        ]
+      },
+      "dpi": {
+        "current": {
+          "state": "fresh",
+          "data": {
+            "x": 1800,
+            "y": 1800
+          }
+        },
+        "range": {
+          "kind": "continuous",
+          "maximum": {
+            "state": "fresh",
+            "data": 35000
+          }
+        }
+      },
+      "stages": {
+        "state": "fresh",
+        "data": {
+          "active": 3,
+          "values": [
+            {
+              "x": 400,
+              "y": 400
+            },
+            {
+              "x": 800,
+              "y": 800
+            },
+            {
+              "x": 1600,
+              "y": 1600
+            },
+            {
+              "x": 3200,
+              "y": 3200
+            },
+            {
+              "x": 6400,
+              "y": 6400
+            }
+          ]
+        }
+      },
+      "polling": {
+        "current": {
+          "state": "fresh",
+          "data": 1000
+        },
+        "supported": [
+          125,
+          500,
+          1000,
+          2000,
+          4000
+        ]
+      },
+      "battery": {
+        "level": {
+          "state": "fresh",
+          "data": 72.0
+        },
+        "charging": false
+      },
+      "idle_time": {
+        "state": "fresh",
+        "data": 300
+      },
+      "low_battery": {
+        "state": "fresh",
+        "data": 15
+      },
+      "zones": [
+        {
+          "id": "logo",
+          "brightness": {
+            "state": "fresh",
+            "data": 80.0
+          },
+          "effect": {
+            "state": "fresh",
+            "data": {
+              "kind": "static",
+              "color": {
+                "red": 68,
+                "green": 214,
+                "blue": 44
+              }
+            }
+          }
+        },
+        {
+          "id": "scroll",
+          "brightness": {
+            "state": "fresh",
+            "data": 40.0
+          },
+          "effect": {
+            "state": "fresh",
+            "data": {
+              "kind": "spectrum"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "serial": "DEMO0000000002",
+      "name": "Demo Keyboard",
+      "kind": "keyboard",
+      "firmware": "v1.4",
+      "driver": "3.12.4",
+      "image": null,
+      "usb": {
+        "vendor": 5426,
+        "product": 600
+      },
+      "availability": "unknown",
+      "capabilities": {
+        "dpi": false,
+        "dpi_stages": false,
+        "available_dpi": false,
+        "poll_rate": false,
+        "supported_poll_rates": false,
+        "battery": false,
+        "charging": false,
+        "idle_time": false,
+        "low_battery_threshold": false,
+        "zones": [
+          {
+            "id": "main",
+            "effects": [
+              "off",
+              "static",
+              "spectrum",
+              "wave",
+              "breath",
+              "breath_dual",
+              "breath_random",
+              "reactive"
+            ],
+            "brightness": true,
+            "effect_name": true,
+            "effect_colors": true,
+            "effect_speed": true,
+            "wave_direction": true
+          }
+        ]
+      },
+      "dpi": null,
+      "stages": null,
+      "polling": null,
+      "battery": null,
+      "idle_time": null,
+      "low_battery": null,
+      "zones": [
+        {
+          "id": "main",
+          "brightness": {
+            "state": "fresh",
+            "data": 100.0
+          },
+          "effect": {
+            "state": "fresh",
+            "data": {
+              "kind": "wave",
+              "direction": "left"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "refreshing": false,
+  "daemon_available": true,
+  "reliable": true,
+  "error": null
+}

@@ -1,89 +1,56 @@
-use super::{Kind, action, caption, card, divider, heading, setting, switch};
+use super::PAGE_WIDTH;
 use crate::{
+    activity::Control,
     app::{App, Message, Preference},
     state::Confirmation,
-    style::{self, Icon},
 };
 use iced::{
-    Alignment, Element, Fill,
-    widget::{Space, column, container, mouse_area, opaque, row, stack, text, text_input},
+    Element, Fill,
+    widget::{Column, row, text_input},
 };
+use iced_t3::{color, icon, style, widget as t3};
 
 impl App {
     pub(super) fn preferences(&self) -> Element<'_, Message> {
-        column![
-            row![
-                super::icon_button(
-                    "back",
-                    Icon::Back,
-                    "Back to devices",
-                    Some(Message::Back),
-                    Kind::Ghost
-                ),
-                text("Preferences").font(style::SEMIBOLD).size(24)
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center),
-            self.appearance_card(),
-            self.notifications_card(),
-            self.history_card(),
-            self.preferences_footer(),
-        ]
-        .spacing(16)
-        .into()
+        Column::new()
+            .spacing(24)
+            .push(self.notifications_section())
+            .push(self.history_section())
+            .into()
     }
 
-    fn appearance_card(&self) -> Element<'_, Message> {
+    fn notifications_section(&self) -> Element<'_, Message> {
         let draft = &self.state.draft;
-        card(
-            column![
-                heading("Appearance"),
-                setting(
-                    "Dark theme",
-                    None,
-                    switch(
-                        "appearance.dark",
-                        self.state.dark_override || draft.values.appearance.dark,
-                        |value| Message::Preference(Preference::Dark(value)),
-                    ),
-                ),
-            ]
-            .spacing(16),
-        )
-    }
-
-    fn notifications_card(&self) -> Element<'_, Message> {
-        let draft = &self.state.draft;
-        card(
-            column![
-                heading("Notifications"),
-                setting(
+        t3::section(
+            t3::section_title("Notifications"),
+            None,
+            [
+                t3::setting(
                     "Connection changes",
-                    Some(
-                        "When a device connects, disconnects or switches between wired and wireless"
+                    t3::muted(
+                        "When a device connects, disconnects or switches between wired and wireless",
                     ),
-                    switch(
+                    t3::switch(
                         "notifications.connections",
+                        None,
                         draft.values.notifications.connections,
-                        |value| Message::Preference(Preference::Connections(value)),
+                        Some(|value| Message::Preference(Preference::Connections(value))),
                     ),
                 ),
-                divider(),
-                setting(
+                t3::setting_titled(
                     "Low battery",
-                    None,
-                    switch(
+                    t3::switch(
                         "notifications.battery",
+                        None,
                         draft.values.notifications.battery,
-                        |value| Message::Preference(Preference::Battery(value)),
+                        Some(|value| Message::Preference(Preference::Battery(value))),
                     ),
                 ),
-            ]
-            .spacing(16),
+            ],
         )
     }
 
-    fn history_card(&self) -> Element<'_, Message> {
+    fn history_section(&self) -> Element<'_, Message> {
         let draft = &self.state.draft;
         let number = |placeholder: &'static str,
                       value: &str,
@@ -93,151 +60,118 @@ impl App {
                 text_input(placeholder, value)
                     .width(76)
                     .padding([6, 10])
-                    .size(14)
+                    .size(13)
+                    .line_height(t3::line_height(13))
                     .style(style::input)
                     .on_input(move |value| Message::Preference(change(value))),
-                caption(unit).size(13).width(56)
+                t3::muted(unit).width(52),
             ]
             .spacing(8)
-            .align_y(Alignment::Center)
+            .align_y(iced::Center)
         };
-
-        card(
-            column![
-                heading("Battery history"),
-                setting(
+        t3::section(
+            t3::section_title("Battery history"),
+            None,
+            [
+                t3::setting_titled(
                     "Record battery history",
-                    None,
-                    switch("history.enabled", draft.values.history.enabled, |value| {
-                        Message::Preference(Preference::History(value))
-                    }),
+                    t3::switch(
+                        "history.enabled",
+                        None,
+                        draft.values.history.enabled,
+                        Some(|value| Message::Preference(Preference::History(value))),
+                    ),
                 ),
-                divider(),
-                setting(
+                t3::setting_titled(
                     "Keep history for",
-                    None,
                     number("Days", &draft.days, "days", Preference::Days),
                 ),
-                divider(),
-                setting(
+                t3::setting_titled(
                     "Sample every",
-                    None,
                     number("Seconds", &draft.seconds, "seconds", Preference::Seconds),
                 ),
-                divider(),
-                setting(
+                t3::setting_titled(
                     format!(
                         "{} observations · {} KiB",
                         self.history.usage.samples,
                         self.history.usage.bytes / 1024
                     ),
-                    None,
-                    action(
-                        "history-clear",
-                        Some(Icon::Trash),
+                    t3::ghost_danger(
+                        icon::TRASH_2,
                         "Clear history…",
                         self.state
                             .connected
                             .then_some(Message::Ask(Confirmation::ClearHistory)),
-                        Kind::GhostDanger,
                     ),
                 ),
-            ]
-            .spacing(16),
+            ],
         )
     }
 
-    fn preferences_footer(&self) -> Element<'_, Message> {
-        let draft = &self.state.draft;
-        let valid = draft.validated();
+    pub(super) fn preferences_bar(&self) -> Element<'_, Message> {
+        let valid = self.state.draft.validated();
         let changed = valid
             .as_ref()
             .is_ok_and(|settings| settings != &self.state.settings);
-        let mut footer = row![action(
-            "settings-defaults",
-            Some(Icon::Revert),
-            "Restore defaults…",
-            Some(Message::Ask(Confirmation::Defaults)),
-            Kind::Ghost
-        )]
-        .spacing(12)
-        .align_y(Alignment::Center);
-        footer = footer.push(Space::new().width(Fill));
-        if let Err(error) = &valid {
-            footer = footer.push(text(error.clone()).size(13).style(style::danger_text));
-        } else if self.state.saved && !changed {
-            footer = footer.push(
-                row![
-                    super::icon(Icon::Check).size(14).style(style::accent_text),
-                    text("Saved").size(13).style(style::accent_text)
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center),
-            );
+        let saving = self.in_flight(Control::Save);
+        let mut status = row![].spacing(8).align_y(iced::Center).width(Fill);
+        if saving {
+            status = status.push(t3::dots());
+            status = status.push(t3::text("Saving preferences…", 13).color(color::MUTED));
+        } else if let Err(error) = &valid {
+            status = status.push(t3::text(error.clone(), 13).color(color::DANGER));
+        } else if changed {
+            status = status.push(t3::icon(icon::INFO).size(14).color(color::WARNING));
+            status = status.push(t3::text("Unsaved changes", 13).color(color::WARNING));
+        } else if self.just_confirmed(Control::Save) {
+            status = status.push(t3::check());
+            status = status.push(t3::text("Preferences saved", 13).color(color::SUCCESS));
         }
-        footer = footer.push(action(
-            "settings-save",
-            None,
-            if self.state.saving {
-                "Saving…"
-            } else {
-                "Save changes"
-            },
-            (changed && !self.state.saving).then_some(Message::Save),
-            Kind::Primary,
-        ));
-        footer.into()
+        t3::composer(
+            row![
+                status,
+                t3::ghost(
+                    icon::UNDO_2,
+                    "Restore defaults…",
+                    Some(Message::Ask(Confirmation::Defaults)),
+                ),
+                if saving {
+                    t3::primary_busy("Save changes")
+                } else {
+                    t3::primary("Save changes", changed.then_some(Message::Save))
+                },
+            ]
+            .spacing(8)
+            .align_y(iced::Center),
+            PAGE_WIDTH,
+            changed,
+        )
     }
 
-    pub(super) fn modal(base: Element<'_, Message>, kind: Confirmation) -> Element<'_, Message> {
-        let (title, description, confirm, confirm_kind) = match kind {
-            Confirmation::Defaults => (
+    pub(super) fn dialog<'a>(kind: Confirmation) -> Element<'a, Message> {
+        let cancel = t3::outline(icon::X, "Cancel", Some(Message::Cancel));
+        match kind {
+            Confirmation::Defaults => t3::dialog(
                 "Restore default settings?",
                 "This replaces your unsaved edits. Save changes to apply the defaults. Battery history is kept.",
-                "Restore defaults",
-                Kind::Primary,
+                [
+                    cancel,
+                    t3::primary("Restore defaults", Some(Message::Confirm)),
+                ],
             ),
-            Confirmation::ClearHistory => (
+            Confirmation::ClearHistory => t3::dialog(
                 "Delete battery history?",
                 "All recorded battery observations and learned estimates will be deleted. This cannot be undone.",
-                "Delete history",
-                Kind::Danger,
+                [cancel, t3::danger("Delete history", Some(Message::Confirm))],
             ),
-        };
-        let dialog = container(
-            column![
-                text(title).font(style::SEMIBOLD).size(18),
-                caption(description).size(14),
-                row![
-                    Space::new().width(Fill),
-                    action(
-                        "modal-cancel",
-                        None,
-                        "Cancel",
-                        Some(Message::Cancel),
-                        Kind::Secondary
-                    ),
-                    action(
-                        "modal-confirm",
-                        None,
-                        confirm,
-                        Some(Message::Confirm),
-                        confirm_kind
-                    )
-                ]
-                .spacing(10)
-            ]
-            .spacing(14),
-        )
-        .padding(24)
-        .max_width(460)
-        .style(style::dialog);
-        let background = container(Space::new().width(Fill).height(Fill)).style(style::scrim);
-        stack![
-            base,
-            mouse_area(opaque(background)).on_press(Message::Cancel),
-            container(opaque(dialog)).center_x(Fill).center_y(Fill)
-        ]
-        .into()
+        }
+    }
+
+    /// The id of the dialog's confirming button, which Tab moves to.
+    pub fn confirm_id(kind: Confirmation) -> &'static str {
+        match kind {
+            Confirmation::Defaults => "Restore defaults",
+            Confirmation::ClearHistory => "Delete history",
+        }
     }
 }

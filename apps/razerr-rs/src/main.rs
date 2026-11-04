@@ -20,9 +20,12 @@ struct Cli {
     /// Open the preferences page.
     #[arg(long)]
     settings: bool,
-    /// Use the dark theme for this window without changing saved preferences.
-    #[arg(long)]
-    dark: bool,
+    /// Accepted for old launchers. The interface is always dark now.
+    #[arg(long = "dark", hide = true)]
+    _dark: bool,
+    /// Open with made-up devices, without the service, OpenRazer or any files.
+    #[arg(long, conflicts_with = "settings")]
+    demo: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -71,6 +74,9 @@ fn run(cli: &Cli) -> Result<()> {
         Some(Command::Quit) => return runtime.block_on(instance::quit()),
         None => {}
     }
+    if cli.demo {
+        return razerr_ui::run_demo().context("could not run the desktop window");
+    }
     let paths = Paths::discover()?;
     let (settings, initial_error) = match Settings::load(&paths) {
         Ok(settings) => (settings, None),
@@ -80,15 +86,13 @@ fn run(cli: &Cli) -> Result<()> {
         ),
     };
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let Some(connection) = runtime.block_on(instance::acquire(sender, cli.settings, cli.dark))?
-    else {
+    let Some(connection) = runtime.block_on(instance::acquire(sender, cli.settings))? else {
         return Ok(());
     };
     let result = razerr_ui::run(
         razerr_ui::Options {
             paths,
             settings,
-            dark_override: cli.dark,
             show_settings: cli.settings,
             initial_error,
         },

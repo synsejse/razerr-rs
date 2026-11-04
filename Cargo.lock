@@ -1657,16 +1657,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iced_audio"
-version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ab384832cd94cf7802db8aca546d6ec2ec8961bda3f2433522eeed57d41af9"
-dependencies = [
- "iced_core",
- "iced_graphics",
-]
-
-[[package]]
 name = "iced_aw"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1804,6 +1794,14 @@ dependencies = [
  "iced_futures",
  "raw-window-handle",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "iced_t3"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "pollster",
 ]
 
 [[package]]
@@ -3117,6 +3115,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3475,8 +3479,10 @@ name = "razerr-ui"
 version = "0.1.0"
 dependencies = [
  "iced",
- "iced_audio",
  "iced_aw",
+ "iced_t3",
+ "image",
+ "pollster",
  "razerr-images",
  "razerr-ipc",
  "razerr-metrics",

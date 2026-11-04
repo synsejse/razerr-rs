@@ -5,18 +5,16 @@
 //! edited is the draggable handle. The X/Y sliders use the same scale.
 
 use iced::{
-    Color, Point, Rectangle, Renderer, Theme, keyboard, mouse,
+    Point, Rectangle, Renderer, Theme, keyboard, mouse,
     widget::{
         Action,
         canvas::{self, Event, Frame, Geometry, Path, Stroke, Text, path::Arc, stroke},
         text::Alignment,
     },
 };
+use iced_t3::{color, font};
 
-use crate::{
-    app::{Edit, Message},
-    style,
-};
+use crate::app::{Edit, Message};
 
 pub const MIN_DPI: u16 = 100;
 const TICKS: [u16; 9] = [100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600];
@@ -127,9 +125,11 @@ impl Pad {
         plot.point(fraction(x, self.maximum), fraction(y, self.maximum))
     }
 
-    fn draw_grid(&self, frame: &mut Frame, plot: &Plot, tokens: &style::Tokens) {
+    fn draw_grid(&self, frame: &mut Frame, plot: &Plot) {
         let origin = plot.point(0.0, 0.0);
-        let grid = Stroke::default().with_color(tokens.line).with_width(1.0);
+        let grid = Stroke::default()
+            .with_color(color::HAIRLINE)
+            .with_width(1.0);
         // Grid and logarithmic tick labels; label every other tick to avoid crowding.
         for (index, tick) in TICKS
             .iter()
@@ -155,9 +155,9 @@ impl Pad {
                 let label = |content: String, position: Point, align_x: Alignment| Text {
                     content,
                     position,
-                    color: tokens.muted,
+                    color: color::MUTED,
                     size: 10.0.into(),
-                    font: style::REGULAR,
+                    font: font::REGULAR,
                     align_x,
                     align_y: iced::alignment::Vertical::Center,
                     ..Text::default()
@@ -182,9 +182,9 @@ impl Pad {
             frame.fill_text(Text {
                 content: content.into(),
                 position,
-                color: tokens.text,
+                color: color::FOREGROUND,
                 size: 11.0.into(),
-                font: style::SEMIBOLD,
+                font: font::SEMIBOLD,
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..Text::default()
@@ -201,16 +201,16 @@ impl Pad {
                 },
                 ..Stroke::default()
                     .with_color(if self.linked {
-                        tokens.accent.scale_alpha(0.7)
+                        color::PRIMARY.scale_alpha(0.7)
                     } else {
-                        tokens.muted.scale_alpha(0.5)
+                        color::MUTED.scale_alpha(0.5)
                     })
                     .with_width(1.0)
             },
         );
     }
 
-    fn draw_stages(&self, frame: &mut Frame, plot: &Plot, tokens: &style::Tokens) {
+    fn draw_stages(&self, frame: &mut Frame, plot: &Plot) {
         let origin = plot.point(0.0, 0.0);
         // Stage vectors that are not being edited.
         for (index, stage) in self.stages.iter().enumerate() {
@@ -223,29 +223,37 @@ impl Pad {
             frame.stroke(
                 &Path::line(origin, point),
                 Stroke::default()
-                    .with_color(tokens.muted.scale_alpha(0.35))
+                    .with_color(color::MUTED.scale_alpha(0.35))
                     .with_width(1.0),
             );
             frame.fill(
                 &Path::circle(point, 9.0),
                 if active {
-                    tokens.accent_soft
+                    color::PRIMARY.scale_alpha(0.18)
                 } else {
-                    tokens.raised
+                    color::RAISED
                 },
             );
             frame.stroke(
                 &Path::circle(point, 9.0),
                 Stroke::default()
-                    .with_color(if active { tokens.accent } else { tokens.line })
+                    .with_color(if active {
+                        color::PRIMARY
+                    } else {
+                        color::HAIRLINE
+                    })
                     .with_width(1.5),
             );
             frame.fill_text(Text {
                 content: (index + 1).to_string(),
                 position: point,
-                color: if active { tokens.accent } else { tokens.text },
+                color: if active {
+                    color::PRIMARY
+                } else {
+                    color::FOREGROUND
+                },
                 size: 10.0.into(),
-                font: style::SEMIBOLD,
+                font: font::SEMIBOLD,
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..Text::default()
@@ -253,7 +261,7 @@ impl Pad {
         }
     }
 
-    fn draw_target(&self, frame: &mut Frame, plot: &Plot, tokens: &style::Tokens, dragging: bool) {
+    fn draw_target(&self, frame: &mut Frame, plot: &Plot, dragging: bool) {
         let origin = plot.point(0.0, 0.0);
         // The edited vector, its projections and the handle.
         let handle = self.point_of(plot, self.target);
@@ -263,7 +271,7 @@ impl Pad {
                 offset: 0,
             },
             ..Stroke::default()
-                .with_color(tokens.accent.scale_alpha(0.45))
+                .with_color(color::PRIMARY.scale_alpha(0.45))
                 .with_width(1.0)
         };
         frame.stroke(
@@ -278,39 +286,36 @@ impl Pad {
             &Path::line(origin, handle),
             Stroke::default()
                 .with_color(if self.enabled {
-                    tokens.accent
+                    color::PRIMARY
                 } else {
-                    tokens.muted
+                    color::MUTED
                 })
                 .with_width(2.0)
                 .with_line_cap(stroke::LineCap::Round),
         );
         let radius = if dragging { 9.0 } else { 7.5 };
         if dragging {
-            frame.fill(&Path::circle(handle, 16.0), tokens.accent_soft);
+            frame.fill(
+                &Path::circle(handle, 16.0),
+                color::PRIMARY.scale_alpha(0.18),
+            );
         }
-        frame.fill(
-            &Path::circle(handle, radius + 3.0),
-            Color {
-                a: 1.0,
-                ..tokens.inset
-            },
-        );
+        frame.fill(&Path::circle(handle, radius + 3.0), color::INSET);
         frame.fill(
             &Path::circle(handle, radius),
             if self.enabled {
-                tokens.accent
+                color::PRIMARY
             } else {
-                tokens.muted
+                color::MUTED
             },
         );
         if let Some(index) = self.editing {
             frame.fill_text(Text {
                 content: (index + 1).to_string(),
                 position: Point::new(handle.x + 14.0, handle.y - 12.0),
-                color: tokens.accent,
+                color: color::PRIMARY,
                 size: 11.0.into(),
-                font: style::SEMIBOLD,
+                font: font::SEMIBOLD,
                 align_x: Alignment::Center,
                 align_y: iced::alignment::Vertical::Center,
                 ..Text::default()
@@ -360,17 +365,16 @@ impl canvas::Program<Message> for Pad {
         &self,
         state: &State,
         renderer: &Renderer,
-        theme: &Theme,
+        _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let tokens = style::tokens(theme);
         let mut frame = Frame::new(renderer, bounds.size());
         let plot = Plot::new(bounds);
 
-        self.draw_grid(&mut frame, &plot, &tokens);
-        self.draw_stages(&mut frame, &plot, &tokens);
-        self.draw_target(&mut frame, &plot, &tokens, state.dragging);
+        self.draw_grid(&mut frame, &plot);
+        self.draw_stages(&mut frame, &plot);
+        self.draw_target(&mut frame, &plot, state.dragging);
         vec![frame.into_geometry()]
     }
 
@@ -409,30 +413,29 @@ impl<Message> canvas::Program<Message> for Ring {
         &self,
         _state: &(),
         renderer: &Renderer,
-        theme: &Theme,
+        _theme: &Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let tokens = style::tokens(theme);
         let mut frame = Frame::new(renderer, bounds.size());
         let center = frame.center();
         let width = 7.0;
         let radius = bounds.width.min(bounds.height) / 2.0 - width;
         frame.stroke(
             &Path::circle(center, radius),
-            Stroke::default().with_color(tokens.line).with_width(width),
+            Stroke::default().with_color(color::TRACK).with_width(width),
         );
         if let Some(level) = self.level {
             let color = if self.stale {
-                tokens.muted
+                color::MUTED
             } else if self.charging {
-                tokens.accent
+                color::SUCCESS
             } else if level <= 5.0 {
-                tokens.danger
+                color::DANGER
             } else if level <= self.low {
-                tokens.warning
+                color::WARNING
             } else {
-                tokens.accent
+                color::PRIMARY
             };
             let start = -std::f32::consts::FRAC_PI_2;
             let sweep = std::f32::consts::TAU * (level / 100.0).clamp(0.0, 1.0) as f32;
@@ -458,9 +461,9 @@ impl<Message> canvas::Program<Message> for Ring {
                 .level
                 .map_or_else(|| "—".into(), |level| format!("{level:.0}%")),
             position: Point::new(center.x, center.y - 4.0),
-            color: tokens.text,
+            color: color::FOREGROUND,
             size: 22.0.into(),
-            font: style::SEMIBOLD,
+            font: font::SEMIBOLD,
             align_x: Alignment::Center,
             align_y: iced::alignment::Vertical::Center,
             ..Text::default()
@@ -473,12 +476,12 @@ impl<Message> canvas::Program<Message> for Ring {
             },
             position: Point::new(center.x, center.y + 17.0),
             color: if self.charging {
-                tokens.accent
+                color::SUCCESS
             } else {
-                tokens.muted
+                color::MUTED
             },
             size: 11.0.into(),
-            font: style::REGULAR,
+            font: font::REGULAR,
             align_x: Alignment::Center,
             align_y: iced::alignment::Vertical::Center,
             ..Text::default()
