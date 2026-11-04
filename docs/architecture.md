@@ -233,9 +233,9 @@ event tests for these. Confirmations initially focus Cancel and trap Tab until d
 
 The design comes from `iced_t3`, a submodule at `crates/iced_t3`: theme, fonts,
 widgets and client-side window decorations. Anything generic that the app needs
-belongs there rather than here. `dpi_pad.rs` and `chart.rs` hold the canvas
-programs specific to this app: the battery ring, the DPI vector pad and the battery
-history chart, whose line is a monotone curve (`curve.rs`) that can't show a level
+belongs there rather than here. `ring.rs`, `dpi_pad.rs` and `chart.rs` hold the
+canvas programs specific to this app: the battery ring, the DPI vector pad and the
+battery history chart, whose line is a monotone curve (`curve.rs`) that can't show a level
 that wasn't measured. Canvas gradients use opaque stops, because translucent ones
 show a hard step under MSAA on some GPUs.
 

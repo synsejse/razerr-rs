@@ -1,4 +1,4 @@
-use super::{APP_ICON, ICON_SIZE, device_glyph, device_name};
+use super::{APP_ICON, ICON_SIZE, device_glyph, device_name, kind_label};
 use crate::{
     app::{App, Message},
     state::Page,
@@ -84,24 +84,11 @@ impl App {
         column![t3::divider(), container(rows).padding([6, 0])].into()
     }
 
-    /// The device's picture once it has loaded, otherwise a glyph for its type.
-    pub(super) fn device_picture<'a>(&self, device: &Device) -> Element<'a, Message> {
-        device
-            .image
-            .as_ref()
-            .and_then(|source| self.images.get(source))
-            .map_or_else(
-                || t3::icon_tile(device_glyph(device.kind.as_deref()), 32),
-                |handle| {
-                    container(
-                        image(handle.clone())
-                            .width(32)
-                            .height(32)
-                            .content_fit(iced::ContentFit::Contain),
-                    )
-                    .into()
-                },
-            )
+    fn device_picture<'a>(&self, device: &Device) -> Element<'a, Message> {
+        self.loaded_picture(device, 32).map_or_else(
+            || t3::icon_tile(device_glyph(device.kind.as_deref()), 32),
+            Element::from,
+        )
     }
 }
 
@@ -120,12 +107,4 @@ fn device_detail(device: &Device) -> String {
         Some(level) => format!("{kind} · {:.0}%", level.get()),
         None => kind,
     }
-}
-
-pub fn kind_label(kind: Option<&str>) -> String {
-    let kind = kind.unwrap_or("Device");
-    let mut letters = kind.chars();
-    letters.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(letters).collect()
-    })
 }

@@ -1,10 +1,13 @@
 use iced::Task;
-use razerr_model::{Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, Serial};
+use razerr_model::{
+    Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, Serial, ZoneId,
+};
 
 use crate::{
     app::{App, Edit, Message},
     dpi_pad,
-    state::{Editor, Section, State, Target, color_hex},
+    editor::{Editor, Target, ZoneEditor},
+    state::{Section, State},
 };
 
 impl App {
@@ -96,41 +99,19 @@ fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String>
             editor.threshold = value;
             editor.threshold_dirty = true;
         }
-        Edit::Kind(zone, kind) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
-            draft.kind = Some(kind);
-            draft.effect_dirty = true;
-        }
+        Edit::Kind(zone, kind) => zone_effect(editor, zone)?.kind = Some(kind),
         Edit::Color(zone, second, value) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
+            let draft = zone_effect(editor, zone)?;
             if second {
                 draft.second = value;
             } else {
                 draft.first = value;
             }
-            draft.effect_dirty = true;
         }
-        Edit::Swatch(zone, second, color) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
-            if second {
-                draft.second = color_hex(color);
-            } else {
-                draft.first = color_hex(color);
-            }
-            draft.effect_dirty = true;
-        }
-        Edit::Speed(zone, speed) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
-            draft.speed = speed;
-            draft.effect_dirty = true;
-        }
-        Edit::Direction(zone, direction) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
-            draft.direction = direction;
-            draft.effect_dirty = true;
-        }
+        Edit::Speed(zone, speed) => zone_effect(editor, zone)?.speed = speed,
+        Edit::Direction(zone, direction) => zone_effect(editor, zone)?.direction = direction,
         Edit::Brightness(zone, brightness) => {
-            let draft = editor.zones.get_mut(&zone).ok_or("Zone is unavailable")?;
+            let draft = zone_draft(editor, zone)?;
             draft.brightness = brightness;
             draft.brightness_known = true;
             draft.brightness_dirty = true;
@@ -138,6 +119,20 @@ fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String>
         Edit::Apply(_) => {}
     }
     Ok(())
+}
+
+fn zone_draft(editor: &mut Editor, zone: ZoneId) -> Result<&mut ZoneEditor, String> {
+    editor
+        .zones
+        .get_mut(&zone)
+        .ok_or_else(|| "Zone is unavailable".to_owned())
+}
+
+/// A zone's draft, for a change to its effect.
+fn zone_effect(editor: &mut Editor, zone: ZoneId) -> Result<&mut ZoneEditor, String> {
+    let draft = zone_draft(editor, zone)?;
+    draft.effect_dirty = true;
+    Ok(draft)
 }
 
 /// Commands for every unapplied draft in `section`.
@@ -227,7 +222,7 @@ fn continuous_maximum(device: &Device) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::Axis;
+    use crate::editor::Axis;
     use razerr_model::Snapshot;
     use razerr_storage::Settings;
     use std::sync::Arc;

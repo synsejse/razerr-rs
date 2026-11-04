@@ -1,6 +1,6 @@
 use crate::{
     app::{App, Edit, Message},
-    state::{ZoneEditor, parse_color},
+    editor::{ZoneEditor, color_hex, parse_color},
 };
 use iced::{
     Color, Element,
@@ -9,53 +9,21 @@ use iced::{
 use iced_t3::{cancellable, font, style, widget as t3};
 use razerr_model::{Device, Direction, EffectKind, Rgb, ZoneId};
 
+const fn preset(red: u8, green: u8, blue: u8) -> Rgb {
+    Rgb { red, green, blue }
+}
+
 /// Quick colors; a hex field covers everything else.
 const PRESETS: [Rgb; 9] = [
-    Rgb {
-        red: 0x44,
-        green: 0xD6,
-        blue: 0x2C,
-    },
-    Rgb {
-        red: 0xFF,
-        green: 0xFF,
-        blue: 0xFF,
-    },
-    Rgb {
-        red: 0xFF,
-        green: 0x3B,
-        blue: 0x30,
-    },
-    Rgb {
-        red: 0xFF,
-        green: 0x95,
-        blue: 0x00,
-    },
-    Rgb {
-        red: 0xFF,
-        green: 0xD6,
-        blue: 0x0A,
-    },
-    Rgb {
-        red: 0x00,
-        green: 0xC7,
-        blue: 0xBE,
-    },
-    Rgb {
-        red: 0x2F,
-        green: 0x7B,
-        blue: 0xFF,
-    },
-    Rgb {
-        red: 0xAF,
-        green: 0x52,
-        blue: 0xDE,
-    },
-    Rgb {
-        red: 0xFF,
-        green: 0x2D,
-        blue: 0x92,
-    },
+    preset(0x44, 0xD6, 0x2C),
+    preset(0xFF, 0xFF, 0xFF),
+    preset(0xFF, 0x3B, 0x30),
+    preset(0xFF, 0x95, 0x00),
+    preset(0xFF, 0xD6, 0x0A),
+    preset(0x00, 0xC7, 0xBE),
+    preset(0x2F, 0x7B, 0xFF),
+    preset(0xAF, 0x52, 0xDE),
+    preset(0xFF, 0x2D, 0x92),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -202,7 +170,7 @@ fn color_row<'a>(
             format!("swatch-{id:?}-{second}-{index}"),
             rgb(preset),
             parsed == Some(preset),
-            enabled.then_some(Message::Edit(Edit::Swatch(id, second, preset))),
+            enabled.then(|| Message::Edit(Edit::Color(id, second, color_hex(preset)))),
         ));
     }
     let input = text_input("#RRGGBB", value)

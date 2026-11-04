@@ -102,7 +102,7 @@ impl Plot {
     fn y(&self, percent: f32) -> f32 {
         TOP + self.height * (1.0 - percent / 100.0)
     }
-    #[allow(
+    #[expect(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         reason = "Chart coordinates are clamped to a 24-hour window and 0–100 percent"

@@ -1,33 +1,23 @@
-use super::{device_glyph, device_name, sidebar::kind_label};
+use super::{device_glyph, device_name, kind_label};
 use crate::app::{App, Message};
 use iced::{
     Element, Fill,
-    widget::{column, container, image, row},
+    widget::{column, container, row},
 };
 use iced_t3::{color, font, style, widget as t3};
 use razerr_model::{Availability, Device};
 
 impl App {
     pub(super) fn device_details<'a>(&'a self, device: &'a Device) -> Element<'a, Message> {
-        let picture: Element<'_, Message> = device
-            .image
-            .as_ref()
-            .and_then(|source| self.images.get(source))
-            .map_or_else(
-                || {
-                    t3::icon(device_glyph(device.kind.as_deref()))
-                        .size(36)
-                        .color(color::MUTED)
-                        .into()
-                },
-                |handle| {
-                    image(handle.clone())
-                        .width(80)
-                        .height(80)
-                        .content_fit(iced::ContentFit::Contain)
-                        .into()
-                },
-            );
+        let picture: Element<'_, Message> = self.loaded_picture(device, 80).map_or_else(
+            || {
+                t3::icon(device_glyph(device.kind.as_deref()))
+                    .size(36)
+                    .color(color::MUTED)
+                    .into()
+            },
+            Element::from,
+        );
         let hero = container(
             row![
                 container(picture)

@@ -1,9 +1,6 @@
-use std::{
-    path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{path::PathBuf, time::Duration};
 
-use razerr_metrics::{Point, Prediction, Sample, Store, Usage};
+use razerr_metrics::{Point, Prediction, Sample, Store, Usage, unix_now};
 use razerr_model::{Device, Serial};
 
 #[derive(Clone, Debug, Default)]
@@ -16,19 +13,11 @@ pub struct History {
     pub now: i64,
 }
 
-pub fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|value| i64::try_from(value.as_secs()).ok())
-        .unwrap_or_default()
-}
-
 pub async fn load(path: PathBuf, device: Option<Device>, allow_prediction: bool) -> History {
     let serial = device.as_ref().map(|device| device.serial.clone());
     let fallback = serial.clone();
     tokio::task::spawn_blocking(move || {
-        let now = now();
+        let now = unix_now();
         let mut history = History {
             serial,
             now,
@@ -104,9 +93,18 @@ pub fn estimate(prediction: Option<&Prediction>) -> String {
     )
 }
 
-pub fn details(prediction: Option<&Prediction>) -> String {
-    prediction.map_or_else(|| "Estimates appear only after enough real observations. Charging needs evidence in every remaining charge band.".into(), |value| {
-        format!("Range {:.1}–{:.1} h · {:?} confidence · {} rate context · {} intervals over {:.0} min",
-            value.hours_min,value.hours_max,value.confidence,if value.exact_context {"exact"} else {"nearby"},value.intervals,value.observed_seconds/60.0)
-    })
+pub fn details(prediction: &Prediction) -> String {
+    format!(
+        "Range {:.1}–{:.1} h · {:?} confidence · {} rate context · {} intervals over {:.0} min",
+        prediction.hours_min,
+        prediction.hours_max,
+        prediction.confidence,
+        if prediction.exact_context {
+            "exact"
+        } else {
+            "nearby"
+        },
+        prediction.intervals,
+        prediction.observed_seconds / 60.0
+    )
 }

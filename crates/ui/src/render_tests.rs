@@ -1,10 +1,10 @@
 //! The real views, rendered and clicked without a window. Set
 //! `RAZERR_UI_CAPTURE_DIR` to save a PNG of every page and state.
-#![allow(
+#![expect(
     clippy::cast_precision_loss,
     reason = "Window sizes and click positions are small whole numbers"
 )]
-#![allow(
+#![expect(
     clippy::too_many_lines,
     reason = "The list of scenes reads best as one list"
 )]
@@ -149,7 +149,7 @@ fn scenarios() -> Vec<(&'static str, App)> {
     scenes.push(("sensitivity-applied", app));
 
     let mut app = demo(Page::Sensitivity);
-    let _ = app.update(Message::Edit(Edit::Target(crate::state::Target::Stage(1))));
+    let _ = app.update(Message::Edit(Edit::Target(crate::editor::Target::Stage(1))));
     scenes.push(("sensitivity-stage", app));
 
     let mut app = demo(Page::Sensitivity);

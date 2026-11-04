@@ -3,7 +3,7 @@ use crate::{
     activity::Control,
     app::{App, Edit, Message},
     dpi_pad::{self, Pad},
-    state::{Axis, Target},
+    editor::{Axis, Target},
 };
 use iced::{
     Element, Fill,

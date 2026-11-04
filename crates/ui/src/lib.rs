@@ -7,9 +7,11 @@ mod curve;
 mod demo;
 mod dpi_pad;
 mod edit;
+mod editor;
 mod history;
 #[cfg(test)]
 mod render_tests;
+mod ring;
 mod state;
 mod subscriptions;
 mod view;
@@ -27,7 +29,7 @@ pub struct Options {
     pub initial_error: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Activation {
     Present,
     Settings,

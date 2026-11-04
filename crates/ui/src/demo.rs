@@ -9,7 +9,7 @@ use std::{
 use razerr_metrics::{Confidence, Point, Prediction, Usage};
 use razerr_model::{Command, Device, Reading, Snapshot, SnapshotKind};
 
-use crate::history::{self, History};
+use crate::history::History;
 
 /// How long a simulated write takes, so its progress can be seen.
 const WRITE: Duration = Duration::from_millis(700);
@@ -86,7 +86,7 @@ fn apply(device: &mut Device, command: Command) {
 
 /// A made-up day of battery use: a long discharge, a charge and a short session.
 pub fn history(device: Option<&Device>) -> History {
-    let now = history::now();
+    let now = razerr_metrics::unix_now();
     let serial = device.map(|device| device.serial.clone());
     if device.is_none_or(|device| device.battery.is_none()) {
         return History {

@@ -22,7 +22,10 @@ const MAX_ACTIVE: usize = 32;
     default_path = "/org/freedesktop/Notifications"
 )]
 trait NotificationServer {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The arguments are the freedesktop Notify method's"
+    )]
     fn notify(
         &self,
         app_name: &str,

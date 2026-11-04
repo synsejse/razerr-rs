@@ -1,22 +1,21 @@
 use std::{
     hash::{Hash, Hasher},
+    num::NonZeroUsize,
     sync::Arc,
     time::Duration,
 };
 
 use iced::{
     Subscription,
-    futures::{SinkExt, Stream, StreamExt},
+    futures::{SinkExt, Stream, StreamExt, channel::mpsc as mpsc_futures},
     stream,
 };
-use razerr_ipc::SERVICE_NAME;
+use razerr_ipc::{Error, SERVICE_NAME};
+use razerr_model::Snapshot;
 use tokio::sync::{Mutex, mpsc};
 use zbus::{MatchRule, MessageStream, message::Type};
 
-use crate::{
-    Activation,
-    app::{Message, Service},
-};
+use crate::{Activation, app::Message};
 
 #[derive(Clone)]
 pub struct Activations(Arc<Mutex<mpsc::Receiver<Activation>>>);
@@ -49,6 +48,8 @@ fn activations(channel: &Activations) -> impl Stream<Item = Message> + use<> {
     })
 }
 
+const DISCONNECTED: &str = "Service disconnected";
+
 pub fn service() -> Subscription<Message> {
     Subscription::run(service_stream)
 }
@@ -56,42 +57,9 @@ pub fn service() -> Subscription<Message> {
 fn service_stream() -> impl Stream<Item = Message> {
     stream::channel(32, async move |mut output| {
         loop {
-            let result: Result<(),String> = async {
-                let client = Arc::new(razerr_ipc::Client::connect().await.map_err(|error| error.to_string())?);
-                let proxy = client.devices().await.map_err(|error| error.to_string())?;
-                // Subscribe first, then obtain the initial property to avoid a lost update.
-                let mut updates = proxy.receive_state_changed().await;
-                let mut errors = proxy.receive_error().await.map_err(|error| error.to_string())?;
-                let rule = MatchRule::builder().msg_type(Type::Signal)
-                    .sender("org.freedesktop.DBus").interface("org.freedesktop.DBus")
-                    .path("/org/freedesktop/DBus").member("NameOwnerChanged").arg(0,SERVICE_NAME)
-                    .build().map_err(|error| error.to_string())?;
-                let mut owners = MessageStream::for_match_rule(rule, client.connection(), std::num::NonZeroUsize::new(8))
-                    .await.map_err(|error| error.to_string())?;
-                let snapshot = client.snapshot().await.map_err(|error| error.to_string())?;
-                output.send(Message::Connected(Service(client.clone()))).await.map_err(|error| error.to_string())?;
-                output.send(Message::Snapshot(Arc::new(snapshot))).await.map_err(|error| error.to_string())?;
-                loop {
-                    tokio::select! {
-                        update = updates.next() => {
-                            let Some(update) = update else { return Err("Service disconnected".to_owned()); };
-                            let state = update.get().await.map_err(|error| error.to_string())?;
-                            let snapshot: razerr_model::Snapshot = razerr_ipc::decode(state).map_err(|error| error.to_string())?;
-                            snapshot.validate().map_err(|error| error.to_string())?;
-                            output.send(Message::Snapshot(Arc::new(snapshot))).await.map_err(|error| error.to_string())?;
-                        }
-                        error = errors.next() => {
-                            let Some(error) = error else { return Err("Service disconnected".to_owned()); };
-                            let args = error.args().map_err(|error| error.to_string())?;
-                            output.send(Message::Error(args.message.to_owned())).await.map_err(|error| error.to_string())?;
-                        }
-                        _ = owners.next() => return Err("Service connection changed; reconnecting…".to_owned()),
-                    }
-                }
-            }.await;
-            let error = match result {
-                Err(error) => error,
-                Ok(()) => "Service disconnected".to_owned(),
+            let error = match follow_service(&mut output).await {
+                Ok(reason) => reason.to_owned(),
+                Err(error) => error.to_string(),
             };
             if output.send(Message::Disconnected(error)).await.is_err() {
                 return;
@@ -99,4 +67,52 @@ fn service_stream() -> impl Stream<Item = Message> {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     })
+}
+
+/// Forwards one service connection's state and errors, and says why it ended.
+async fn follow_service(output: &mut mpsc_futures::Sender<Message>) -> Result<&'static str, Error> {
+    let client = razerr_ipc::Client::connect().await?;
+    let proxy = client.devices().await?;
+    // Subscribe first, then obtain the initial property to avoid a lost update.
+    let mut updates = proxy.receive_state_changed().await;
+    let mut errors = proxy.receive_error().await?;
+    let rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .interface("org.freedesktop.DBus")
+        .path("/org/freedesktop/DBus")
+        .member("NameOwnerChanged")
+        .arg(0, SERVICE_NAME)
+        .build()?;
+    let mut owners =
+        MessageStream::for_match_rule(rule, client.connection(), NonZeroUsize::new(8)).await?;
+    let snapshot = client.snapshot().await?;
+    forward(output, Message::Connected(client.clone())).await?;
+    forward(output, Message::Snapshot(Arc::new(snapshot))).await?;
+    loop {
+        tokio::select! {
+            update = updates.next() => {
+                let Some(update) = update else { return Ok(DISCONNECTED) };
+                let snapshot: Snapshot = razerr_ipc::decode(update.get().await?)?;
+                snapshot.validate().map_err(|error| Error::Invalid(error.to_string()))?;
+                forward(output, Message::Snapshot(Arc::new(snapshot))).await?;
+            }
+            error = errors.next() => {
+                let Some(error) = error else { return Ok(DISCONNECTED) };
+                let message = error.args()?.message.to_owned();
+                forward(output, Message::Error(message)).await?;
+            }
+            _ = owners.next() => return Ok("Service connection changed; reconnecting…"),
+        }
+    }
+}
+
+async fn forward(
+    output: &mut mpsc_futures::Sender<Message>,
+    message: Message,
+) -> Result<(), Error> {
+    output
+        .send(message)
+        .await
+        .map_err(|error| Error::Invalid(error.to_string()))
 }

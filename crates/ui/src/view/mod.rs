@@ -62,6 +62,14 @@ fn device_name(device: &Device) -> &str {
     device.name.as_deref().unwrap_or(device.serial.as_str())
 }
 
+fn kind_label(kind: Option<&str>) -> String {
+    let kind = kind.unwrap_or("Device");
+    let mut letters = kind.chars();
+    letters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(letters).collect()
+    })
+}
+
 /// The bounded numeric input's look: it has no step buttons, only a text field.
 fn number_input(_: &iced::Theme, _: iced_aw::style::Status) -> iced_aw::style::number_input::Style {
     iced_aw::style::number_input::Style {
@@ -71,6 +79,18 @@ fn number_input(_: &iced::Theme, _: iced_aw::style::Status) -> iced_aw::style::n
 }
 
 impl App {
+    /// The device's picture, once it has been downloaded.
+    fn loaded_picture(&self, device: &Device, size: u32) -> Option<image::Image> {
+        let source = device.image.as_ref()?;
+        let handle = self.images.get(source)?;
+        Some(
+            image(handle.clone())
+                .width(size)
+                .height(size)
+                .content_fit(iced::ContentFit::Contain),
+        )
+    }
+
     pub fn view(&self) -> Element<'_, Message> {
         let mut page = column![].spacing(24).max_width(PAGE_WIDTH);
         if let Some(error) = &self.state.error {

@@ -21,7 +21,7 @@ pub enum Availability {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Independent advertised protocol features, not mutually exclusive states"
 )]
@@ -39,7 +39,7 @@ pub struct Capabilities {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "Independent optional getters in the upstream protocol"
 )]

@@ -2,8 +2,8 @@ use super::sensitivity::format_duration;
 use crate::{
     app::{App, Edit, Message},
     chart::Chart,
-    dpi_pad::Ring,
     history,
+    ring::Ring,
 };
 use iced::{
     Element, Fill,
@@ -55,7 +55,7 @@ impl App {
         let mut summary = Column::new().spacing(4).width(Fill);
         summary = summary.push(t3::text(self.battery_summary(device), 14).font(font::MEDIUM));
         if !stale && let Some(prediction) = &self.history.prediction {
-            summary = summary.push(t3::muted(history::details(Some(prediction))));
+            summary = summary.push(t3::muted(history::details(prediction)));
         }
         let mut rows: Vec<Element<'a, Message>> = vec![
             container(row![ring, summary].spacing(20).align_y(iced::Center))

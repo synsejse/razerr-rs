@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use iced::{
@@ -10,29 +10,18 @@ use iced::{
     window,
 };
 use iced_t3::chrome;
-use razerr_model::{
-    Command, Direction, DpiStages, EffectKind, PollRate, Rgb, Serial, Snapshot, SnapshotKind,
-    ZoneId,
-};
+use razerr_model::{Command, Direction, EffectKind, Serial, Snapshot, SnapshotKind, ZoneId};
 use razerr_storage::{Paths, Settings};
 
 use crate::{
     Activation, Options,
-    activity::{Activity, Confirmed, Control},
+    activity::{Activity, Backend, Confirmed, Control},
     demo::{self, Demo},
+    editor::{Axis, Editor, Target},
     history::{self, History},
-    state::{Axis, Confirmation, Page, Preferences, Section, State, Target},
+    state::{Confirmation, Page, Preferences, Section, State},
     subscriptions::{self, Activations},
-    view,
 };
-
-#[derive(Clone)]
-pub struct Service(pub Arc<razerr_ipc::Client>);
-impl std::fmt::Debug for Service {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Service")
-    }
-}
 
 /// Changes to device drafts. Nothing reaches the device until `Apply`.
 #[derive(Clone, Debug)]
@@ -53,7 +42,6 @@ pub enum Edit {
     Threshold(String),
     Kind(ZoneId, EffectKind),
     Color(ZoneId, bool, String),
-    Swatch(ZoneId, bool, Rgb),
     Speed(ZoneId, u8),
     Direction(ZoneId, Direction),
     Brightness(ZoneId, f64),
@@ -74,7 +62,7 @@ pub enum Preference {
 pub enum Message {
     /// Nothing to do: what a control sends while it can't be used.
     Idle,
-    Connected(Service),
+    Connected(razerr_ipc::Client),
     Disconnected(String),
     Snapshot(Arc<Snapshot>),
     Error(String),
@@ -113,48 +101,24 @@ pub enum Message {
     Window(chrome::Action),
 }
 
-/// What device changes go through.
-enum Backend {
-    /// The razerr-rs service, once connected.
-    Service(Option<Service>),
-    /// The offline stand-in. Nothing it does leaves the process.
-    Demo(Demo),
-}
-
-/// Runs `commands` in order and stops at the first that fails: stage activation
-/// can change the current DPI, so later ones may no longer make sense.
-pub(crate) async fn in_order<Sent: Future<Output = Result<(), String>>>(
-    commands: Vec<Command>,
-    mut send: impl FnMut(Command) -> Sent,
-) -> Result<(), String> {
-    for command in commands {
-        send(command).await?;
-    }
-    Ok(())
-}
-
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "Independent read coalescing and window shutdown flags"
-)]
 pub struct App {
     pub state: State,
     pub images: HashMap<String, image::Handle>,
     /// `None` in the demo, which touches no files.
-    paths: Option<Paths>,
+    pub(crate) paths: Option<Paths>,
     requested: HashSet<String>,
     loader: Option<razerr_images::ImageLoader>,
     pub history: History,
     history_loading: bool,
     history_again: bool,
     connection_error: Option<String>,
-    backend: Backend,
+    pub(crate) backend: Backend,
     activations: Option<Activations>,
     window: Option<window::Id>,
     closing: bool,
     pub pending: Option<Activity>,
     pub confirmed: Option<Confirmed>,
-    next_activity: u64,
+    pub(crate) next_activity: u64,
 }
 
 impl App {
@@ -275,75 +239,17 @@ impl App {
                 | Message::Ask(_)
         )
     }
-    /// Claims the one slot for a change in flight and says how to report its end.
-    fn begin(&mut self, control: Control, progress: String, done: String) -> u64 {
-        self.next_activity += 1;
-        self.confirmed = None;
-        self.pending = Some(Activity {
-            id: self.next_activity,
-            control,
-            progress,
-            done,
-            serial: self.state.selected.clone(),
-        });
-        self.next_activity
-    }
-    /// Ends the change `id`, if it's the one in flight.
-    fn finish(&mut self, id: u64) -> Option<Activity> {
-        self.pending.take_if(|activity| activity.id == id)
-    }
-    fn confirm(&mut self, activity: Activity) {
-        self.confirmed = Some(Confirmed {
-            control: activity.control,
-            text: activity.done,
-            at: Instant::now(),
-        });
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Message dispatch delegates device edits, history, closing and views to separate functions"
-    )]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         if self.busy() && Self::held(&message) {
             return Task::none();
         }
         match message {
             Message::Idle => {}
-            Message::Connected(service) => {
-                if self.state.error == self.connection_error {
-                    self.state.error = None;
-                }
-                self.connection_error = None;
-                self.backend = Backend::Service(Some(service));
-                self.state.connected = true;
-                self.state.received = false;
-            }
-            Message::Disconnected(error) => {
-                self.backend = Backend::Service(None);
-                self.pending = None;
-                self.state.connected = false;
-                self.state.received = true;
-                self.connection_error =
-                    Some(format!("Cannot reach the razerr-rs service: {error}"));
-                self.state.error.clone_from(&self.connection_error);
-            }
-            Message::Snapshot(snapshot) => {
-                let sampled = snapshot.kind != SnapshotKind::Ack;
-                self.state.receive(snapshot);
-                let mut tasks = self.image_tasks();
-                if sampled {
-                    tasks.push(self.load_history());
-                }
-                return Task::batch(tasks);
-            }
+            Message::Connected(service) => self.connected(service),
+            Message::Disconnected(error) => self.disconnected(&error),
+            Message::Snapshot(snapshot) => return self.snapshot(snapshot),
             Message::Error(error) => self.state.error = Some(error),
-            Message::Dismiss => {
-                self.state
-                    .dismissed_error
-                    .clone_from(&self.state.snapshot.error);
-                self.state.error = None;
-            }
+            Message::Dismiss => self.state.dismiss_error(),
             Message::Select(serial) => {
                 self.state.select(serial);
                 return self.load_history();
@@ -352,46 +258,13 @@ impl App {
                 self.state.page = page;
                 self.state.preferences = false;
             }
-            Message::Preferences => {
-                // The draft follows saved settings itself, so leaving the page and
-                // coming back keeps unsaved edits.
-                self.state.preferences = true;
-                let Some(paths) = self.paths.clone() else {
-                    return Task::none();
-                };
-                return Task::batch([
-                    self.load_history(),
-                    Task::perform(
-                        async move {
-                            tokio::task::spawn_blocking(move || {
-                                Settings::load(&paths).map_err(|error| error.to_string())
-                            })
-                            .await
-                            .map_err(|error| error.to_string())?
-                        },
-                        Message::Reloaded,
-                    ),
-                ]);
-            }
-            Message::Refresh => {
-                self.state.editor = crate::state::Editor::default();
-                if let Some(device) = self.state.selected().cloned() {
-                    self.state.editor.sync(&device);
-                }
-                let id = self.begin(
-                    Control::Refresh,
-                    "Reading devices…".into(),
-                    "Devices updated".into(),
-                );
-                return self.send(id, vec![Command::Refresh]);
-            }
+            Message::Preferences => return self.open_preferences(),
+            Message::Refresh => return self.refresh(),
             Message::ActivateStage(stage) => return self.activate_stage(stage),
             Message::PollRate(rate) => return self.set_poll_rate(rate),
             Message::Edit(edit) => return self.edit(edit),
             Message::Revert(section) => self.state.revert(Some(section)),
-            Message::Preference(preference) => {
-                self.preference(preference);
-            }
+            Message::Preference(preference) => self.preference(preference),
             Message::RevertPreferences => {
                 self.state.draft = self.state.settings.clone().into();
             }
@@ -402,43 +275,14 @@ impl App {
                 }
                 Err(error) => tracing::debug!(%error,"device image unavailable"),
             },
-            Message::History(history) => {
-                self.history_loading = false;
-                if history.serial.as_ref() == self.state.selected().map(|device| &device.serial) {
-                    self.history = history;
-                } else {
-                    self.history_again = true;
-                }
-                if self.history_again {
-                    self.history_again = false;
-                    return self.load_history();
-                }
-            }
+            Message::History(history) => return self.history_loaded(history),
             Message::Tick => return self.load_history(),
             Message::Frame => {
                 self.confirmed.take_if(|confirmed| confirmed.expired());
             }
             Message::Save => return self.save(),
-            Message::Saved(id, result) => {
-                if let Some(activity) = self.finish(id) {
-                    match result {
-                        Ok(settings) => {
-                            self.state.finish_save(settings);
-                            self.confirm(activity);
-                        }
-                        Err(error) => self.state.error = Some(error),
-                    }
-                }
-            }
-            Message::Reloaded(result) => match result {
-                Ok(settings) => {
-                    if self.state.draft.validated().as_ref() == Ok(&self.state.settings) {
-                        self.state.draft = settings.clone().into();
-                    }
-                    self.state.settings = settings;
-                }
-                Err(error) => self.state.error = Some(error),
-            },
+            Message::Saved(id, result) => self.saved(id, result),
+            Message::Reloaded(result) => self.reloaded(result),
             Message::Ask(kind) => {
                 self.state.open_confirmation(kind);
                 return operation::focus("Cancel");
@@ -451,15 +295,7 @@ impl App {
                 Some(Confirmation::ClearHistory) => return self.clear_history(),
                 None => {}
             },
-            Message::Cleared(id, result) => {
-                if let Some(activity) = self.finish(id) {
-                    match result {
-                        Ok(()) => self.confirm(activity),
-                        Err(error) => self.state.error = Some(error),
-                    }
-                }
-                return self.load_history();
-            }
+            Message::Cleared(id, result) => return self.cleared(id, result),
             Message::Key(key, modifiers) => return self.key(&key, modifiers),
             Message::Opened(id) => {
                 self.window = Some(id);
@@ -468,22 +304,7 @@ impl App {
                 }
             }
             Message::Close(id) => return self.close(id),
-            Message::Activation(activation) => {
-                match activation {
-                    Activation::Present => {}
-                    Activation::Settings => {
-                        let task = self.update(Message::Preferences);
-                        return Task::batch([task, self.present()]);
-                    }
-                    Activation::Quit => {
-                        if let Some(id) = self.window {
-                            return self.close(id);
-                        }
-                        self.closing = true;
-                    }
-                }
-                return self.present();
-            }
+            Message::Activation(activation) => return self.activated(activation),
             Message::Window(chrome::Action::Close) => {
                 if let Some(id) = self.window {
                     return self.close(id);
@@ -495,219 +316,111 @@ impl App {
         Task::none()
     }
 
-    /// Switches to a stage using the values the device reported, so unapplied
-    /// stage edits can't reach it this way.
-    fn activate_stage(&mut self, stage: u8) -> Task<Message> {
-        let Some(device) = self.state.selected() else {
-            return Task::none();
-        };
-        if self.state.editor.stages_dirty {
-            return Task::none();
+    fn connected(&mut self, service: razerr_ipc::Client) {
+        if self.state.error == self.connection_error {
+            self.state.error = None;
         }
-        let serial = device.serial.clone();
-        let stages = device
-            .stages
-            .as_ref()
-            .and_then(|reading| reading.fresh())
-            .ok_or("DPI stages are unavailable".to_owned())
-            .and_then(|stages| {
-                DpiStages::new(stage, stages.values().to_vec()).map_err(|error| error.to_string())
-            });
-        let command = stages.map(|stages| Command::SetDpiStages { serial, stages });
-        self.send_validated(
-            command,
-            Control::Stage(stage),
-            format!("Switching to stage {stage}…"),
-            format!("Stage {stage} active"),
-        )
+        self.connection_error = None;
+        self.backend = Backend::Service(Some(service));
+        self.state.connected = true;
+        self.state.received = false;
     }
 
-    fn set_poll_rate(&mut self, rate: u16) -> Task<Message> {
-        let Some(device) = self.state.selected() else {
+    fn disconnected(&mut self, error: &str) {
+        self.backend = Backend::Service(None);
+        self.pending = None;
+        self.state.connected = false;
+        self.state.received = true;
+        self.connection_error = Some(format!("Cannot reach the razerr-rs service: {error}"));
+        self.state.error.clone_from(&self.connection_error);
+    }
+
+    fn snapshot(&mut self, snapshot: Arc<Snapshot>) -> Task<Message> {
+        let sampled = snapshot.kind != SnapshotKind::Ack;
+        self.state.receive(snapshot);
+        let mut tasks = self.image_tasks();
+        if sampled {
+            tasks.push(self.load_history());
+        }
+        Task::batch(tasks)
+    }
+
+    /// The draft follows saved settings itself, so leaving the page and coming back
+    /// keeps unsaved edits.
+    fn open_preferences(&mut self) -> Task<Message> {
+        self.state.preferences = true;
+        let Some(paths) = self.paths.clone() else {
             return Task::none();
         };
-        let serial = device.serial.clone();
-        let command = PollRate::new(rate)
-            .map_err(|error| error.to_string())
-            .map(|rate| Command::SetPollRate { serial, rate });
-        let label = view::format_rate(rate);
-        self.send_validated(
-            command,
-            Control::Poll(rate),
-            format!("Setting polling to {label}…"),
-            format!("Polling at {label}"),
-        )
-    }
-
-    /// One change straight from a control, once the device can accept it.
-    fn send_validated(
-        &mut self,
-        command: Result<Command, String>,
-        control: Control,
-        progress: String,
-        done: String,
-    ) -> Task<Message> {
-        let checked = command.and_then(|command| {
-            let device = self.state.selected().ok_or("Device was removed")?;
-            command
-                .validate(device)
-                .map_err(|error| error.to_string())?;
-            Ok::<_, String>(command)
-        });
-        match checked {
-            Ok(command) if self.state.controls_enabled() => {
-                let id = self.begin(control, progress, done);
-                self.send(id, vec![command])
-            }
-            Ok(_) => Task::none(),
-            Err(error) => {
-                self.state.error = Some(error);
-                Task::none()
-            }
-        }
-    }
-
-    pub(crate) fn apply(&mut self, section: Section, commands: Vec<Command>) -> Task<Message> {
-        if commands.is_empty() {
-            return Task::none();
-        }
-        let name = section.title();
-        let id = self.begin(
-            Control::Apply(section),
-            format!("Applying {}…", name.to_lowercase()),
-            format!("{name} applied"),
-        );
-        self.send(id, commands)
-    }
-
-    /// Sends `commands` for the activity `id`, and reads the state they left.
-    fn send(&self, id: u64, commands: Vec<Command>) -> Task<Message> {
-        let result = match &self.backend {
-            Backend::Service(service) => {
-                let service = service.clone();
-                Task::perform(
-                    async move {
-                        let service = service.ok_or("Service is unavailable")?;
-                        in_order(commands, |command| {
-                            let service = service.clone();
-                            async move {
-                                service
-                                    .0
-                                    .send(command)
-                                    .await
-                                    .map_err(|error| error.to_string())
-                            }
-                        })
-                        .await?;
-                        let snapshot = service.0.snapshot().await;
-                        snapshot.map(Arc::new).map_err(|error| error.to_string())
-                    },
-                    move |result| (id, result),
-                )
-            }
-            Backend::Demo(demo) => {
-                let demo = demo.clone();
-                Task::perform(
-                    async move {
-                        in_order(commands, |command| {
-                            let demo = demo.clone();
-                            async move { demo.send(command).await }
-                        })
-                        .await?;
-                        Ok(demo.snapshot())
-                    },
-                    move |result| (id, result),
-                )
-            }
-        };
-        result.map(|(id, result)| Message::Finished(id, result))
-    }
-
-    fn finished(&mut self, id: u64, result: Result<Arc<Snapshot>, String>) -> Task<Message> {
-        let Some(activity) = self.finish(id) else {
-            return Task::none();
-        };
-        match result {
-            Ok(snapshot) => {
-                let task = self.update(Message::Snapshot(snapshot));
-                if let Control::Apply(section) = activity.control
-                    && activity.serial == self.state.selected
-                {
-                    // The device has answered, so its values replace the drafts,
-                    // even where it normalized what it was given.
-                    self.state.revert(Some(section));
-                }
-                self.confirm(activity);
-                task
-            }
-            Err(error) => {
-                self.state.error = Some(error);
-                Task::none()
-            }
-        }
-    }
-
-    fn save(&mut self) -> Task<Message> {
-        let settings = match self.state.draft.validated() {
-            Ok(settings) => settings,
-            Err(error) => {
-                self.state.error = Some(error);
-                return Task::none();
-            }
-        };
-        let paths = self.paths.clone();
-        let id = self.begin(
-            Control::Save,
-            "Saving preferences…".into(),
-            "Preferences saved".into(),
-        );
-        Task::perform(
-            async move {
-                let Some(paths) = paths else {
-                    return Ok(settings);
-                };
-                tokio::task::spawn_blocking(move || {
-                    settings
-                        .save(&paths)
-                        .map(|()| settings)
-                        .map_err(|error| error.to_string())
-                })
-                .await
-                .map_err(|error| error.to_string())?
-            },
-            move |result| Message::Saved(id, result),
-        )
-    }
-
-    fn clear_history(&mut self) -> Task<Message> {
-        let service = match &self.backend {
-            Backend::Service(service) => service.clone(),
-            Backend::Demo(_) => {
-                self.history.points.clear();
-                self.history.prediction = None;
-                self.history.usage = razerr_metrics::Usage::default();
-                return Task::none();
-            }
-        };
-        let id = self.begin(
-            Control::ClearHistory,
-            "Deleting history…".into(),
-            "History deleted".into(),
-        );
-        Task::perform(
-            async move {
-                let service = service.ok_or("Service is unavailable")?;
-                razerr_ipc::ControlProxy::builder(service.0.connection())
-                    .destination(service.0.destination())
-                    .build()
+        Task::batch([
+            self.load_history(),
+            Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        Settings::load(&paths).map_err(|error| error.to_string())
+                    })
                     .await
                     .map_err(|error| error.to_string())?
-                    .clear_history()
-                    .await
-                    .map_err(|error| error.to_string())
-            },
-            move |result| Message::Cleared(id, result),
-        )
+                },
+                Message::Reloaded,
+            ),
+        ])
+    }
+
+    fn reloaded(&mut self, result: Result<Settings, String>) {
+        match result {
+            Ok(settings) => {
+                if self.state.draft.validated().as_ref() == Ok(&self.state.settings) {
+                    self.state.draft = settings.clone().into();
+                }
+                self.state.settings = settings;
+            }
+            Err(error) => self.state.error = Some(error),
+        }
+    }
+
+    fn refresh(&mut self) -> Task<Message> {
+        self.state.editor = Editor::default();
+        if let Some(device) = self.state.selected().cloned() {
+            self.state.editor.sync(&device);
+        }
+        let id = self.begin(
+            Control::Refresh,
+            "Reading devices…".into(),
+            "Devices updated".into(),
+        );
+        self.send(id, vec![Command::Refresh])
+    }
+
+    fn history_loaded(&mut self, history: History) -> Task<Message> {
+        self.history_loading = false;
+        if history.serial.as_ref() == self.state.selected().map(|device| &device.serial) {
+            self.history = history;
+        } else {
+            self.history_again = true;
+        }
+        if self.history_again {
+            self.history_again = false;
+            return self.load_history();
+        }
+        Task::none()
+    }
+
+    fn activated(&mut self, activation: Activation) -> Task<Message> {
+        match activation {
+            Activation::Present => {}
+            Activation::Settings => {
+                let task = self.open_preferences();
+                return Task::batch([task, self.present()]);
+            }
+            Activation::Quit => {
+                if let Some(id) = self.window {
+                    return self.close(id);
+                }
+                self.closing = true;
+            }
+        }
+        self.present()
     }
 
     fn preference(&mut self, preference: Preference) {
@@ -737,7 +450,7 @@ impl App {
         self.closing = true;
         window::close(id)
     }
-    fn load_history(&mut self) -> Task<Message> {
+    pub(crate) fn load_history(&mut self) -> Task<Message> {
         let Some(paths) = &self.paths else {
             self.history = demo::history(self.state.selected());
             return Task::none();
@@ -747,7 +460,7 @@ impl App {
         if self.history.serial != selected {
             self.history = History {
                 serial: selected,
-                now: history::now(),
+                now: razerr_metrics::unix_now(),
                 ..History::default()
             };
         }
@@ -855,6 +568,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::activity::in_order;
+    use razerr_model::DpiStages;
+    use std::time::Instant;
 
     fn app() -> App {
         let root = std::env::temp_dir().join("razerr-rs-ui-tests");
