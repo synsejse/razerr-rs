@@ -18,7 +18,7 @@ use crate::{
     activity::Control,
     app::{App, Edit, Message},
     edit,
-    state::{Page, Section},
+    state::Page,
 };
 
 pub use sensitivity::format_rate;
@@ -180,10 +180,10 @@ impl App {
         with_status.push(content).into()
     }
 
-    /// What the app is doing or just finished, in words. A section's Apply reports
-    /// in its docked bar instead while that bar is on screen.
+    /// What the app is doing or just finished, in words. A change the docked bar
+    /// reports on stays there instead.
     fn activity_line(&self) -> Option<Element<'_, Message>> {
-        let docked = self.docked_section().map(Control::Apply);
+        let docked = self.docked_control();
         if let Some(activity) = self.pending.as_ref() {
             return (Some(activity.control) != docked).then(|| {
                 row![t3::dots(), t3::muted(&activity.progress)]
@@ -237,71 +237,85 @@ impl App {
         chrome::bar(leading, Some(refresh), Message::Window)
     }
 
-    /// The section whose Apply bar this page can show.
-    fn docked_section(&self) -> Option<Section> {
+    /// The change this page's docked bar reports on, if it has one.
+    fn docked_control(&self) -> Option<Control> {
         if self.state.preferences {
-            return None;
+            return Some(Control::Save);
         }
         self.state.selected()?;
-        self.state.current_page().section()
+        self.state.current_page().section().map(Control::Apply)
     }
 
-    fn docked_bar(&self) -> Option<Element<'_, Message>> {
-        if self.state.preferences {
-            return Some(self.preferences_bar());
+    /// Whether this page has edits waiting, and why they can't go yet if so.
+    fn draft(&self, control: Control) -> (bool, Option<String>) {
+        if let Control::Apply(section) = control {
+            return (
+                self.state.editor.dirty(section),
+                edit::commands(&self.state, section).err(),
+            );
         }
-        let section = self.docked_section()?;
-        let control = Control::Apply(section);
-        (self.state.editor.dirty(section)
-            || self.in_flight(control)
-            || self.just_confirmed(control))
-        .then(|| self.apply_bar(section))
+        let valid = self.state.draft.validated();
+        (valid.as_ref() != Ok(&self.state.settings), valid.err())
     }
 
-    /// Device edits are drafts; the bar keeps them and Apply in view while the page
-    /// scrolls. Nothing reaches the device until Apply.
-    fn apply_bar(&self, section: Section) -> Element<'_, Message> {
-        let control = Control::Apply(section);
-        let saving = self.in_flight(control);
-        let dirty = self.state.editor.dirty(section);
-        let invalid = edit::commands(&self.state, section).err();
-        let (status, tint): (&str, _) =
-            if let Some(activity) = self.pending.as_ref().filter(|_| saving) {
-                (&activity.progress, color::MUTED)
-            } else if let Some(error) = invalid.as_deref().filter(|_| dirty) {
-                (error, color::DANGER)
-            } else if dirty {
-                ("Unapplied changes", color::WARNING)
+    /// What the docked bar has to say and in which color. With nothing to say
+    /// there is no bar, on any page.
+    pub(crate) fn docked_status(&self) -> Option<(String, iced::Color)> {
+        let control = self.docked_control()?;
+        let (dirty, invalid) = self.draft(control);
+        if let Some(activity) = self.pending.as_ref().filter(|_| self.in_flight(control)) {
+            Some((activity.progress.clone(), color::MUTED))
+        } else if let Some(error) = invalid.filter(|_| dirty) {
+            Some((error, color::DANGER))
+        } else if dirty {
+            let status = if control == Control::Save {
+                "Unsaved changes"
             } else {
-                let confirmed = self.confirmed.as_ref().filter(|_| !dirty);
-                (
-                    confirmed.map_or("", |confirmed| confirmed.text.as_str()),
-                    color::SUCCESS,
-                )
+                "Unapplied changes"
             };
-        let marker: Element<'_, Message> = if saving {
+            Some((status.to_owned(), color::WARNING))
+        } else {
+            self.confirmed
+                .as_ref()
+                .filter(|confirmed| confirmed.control == control)
+                .map(|confirmed| (confirmed.text.clone(), color::SUCCESS))
+        }
+    }
+
+    /// Edits are drafts; the bar keeps them and their action in view while the
+    /// page scrolls. Every page uses this one bar, so saving works the same.
+    fn docked_bar(&self) -> Option<Element<'_, Message>> {
+        let (status, tint) = self.docked_status()?;
+        let control = self.docked_control()?;
+        let (dirty, invalid) = self.draft(control);
+        let working = self.in_flight(control);
+        let (label, revert, action, usable) = match control {
+            Control::Apply(section) => (
+                "Apply",
+                Message::Revert(section),
+                Message::Edit(Edit::Apply(section)),
+                self.state.controls_enabled(),
+            ),
+            _ => ("Save", Message::RevertPreferences, Message::Save, true),
+        };
+        let marker: Element<'_, Message> = if working {
             t3::dots()
         } else if dirty {
             t3::icon(icon::INFO).size(14).color(tint).into()
         } else {
             t3::check()
         };
-        let can_apply = dirty && invalid.is_none() && self.state.controls_enabled();
-        t3::composer(
+        Some(t3::composer(
             row![
                 marker,
-                t3::text(status.to_owned(), 13).color(tint).width(Fill),
-                t3::ghost(
-                    icon::UNDO_2,
-                    "Revert",
-                    dirty.then_some(Message::Revert(section)),
-                ),
-                if saving {
-                    t3::primary_busy("Apply")
+                t3::text(status, 13).color(tint).width(Fill),
+                t3::ghost(icon::UNDO_2, "Revert", dirty.then_some(revert)),
+                if working {
+                    t3::primary_busy(label)
                 } else {
                     t3::primary(
-                        "Apply",
-                        can_apply.then_some(Message::Edit(Edit::Apply(section))),
+                        label,
+                        (dirty && invalid.is_none() && usable).then_some(action),
                     )
                 },
             ]
@@ -309,6 +323,6 @@ impl App {
             .align_y(iced::Center),
             PAGE_WIDTH,
             dirty,
-        )
+        ))
     }
 }

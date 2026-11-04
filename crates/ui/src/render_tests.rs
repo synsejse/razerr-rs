@@ -255,6 +255,16 @@ fn scenarios() -> Vec<(&'static str, App)> {
 
     let mut app = App::demo();
     app.state.preferences = true;
+    let _ = app.update(Message::Preference(Preference::Days("30".into())));
+    scenes.push(("preferences-draft", app));
+
+    let mut app = App::demo();
+    app.state.preferences = true;
+    app.confirmed = Some(confirmed(Control::Save, "Preferences saved"));
+    scenes.push(("preferences-saved", app));
+
+    let mut app = App::demo();
+    app.state.preferences = true;
     app.state.open_confirmation(Confirmation::ClearHistory);
     scenes.push(("dialog", app));
 
@@ -520,6 +530,36 @@ fn unapplied_stage_edits_lock_the_stage_choices() {
     let _ = app.update(Message::Edit(Edit::ActiveStage(1)));
     assert!(app.state.editor.stages_dirty);
     assert_eq!(stages_sent(&click_page(&app)), Vec::<u8>::new());
+}
+
+#[test]
+fn the_docked_bar_appears_only_with_something_to_say_on_every_page() {
+    load_fonts();
+    for page in [Page::Sensitivity, Page::Lighting, Page::Power] {
+        assert!(demo(page).docked_status().is_none(), "{page:?} at rest");
+    }
+    let mut preferences = App::demo();
+    preferences.state.preferences = true;
+    assert!(preferences.docked_status().is_none(), "Preferences at rest");
+
+    let mut app = demo(Page::Power);
+    let _ = app.update(Message::Edit(Edit::Idle("600".into())));
+    assert_eq!(app.docked_status().expect("a draft").0, "Unapplied changes");
+    let _ = app.update(Message::Preference(Preference::Days("30".into())));
+    let _ = app.update(Message::Preferences);
+    assert_eq!(app.docked_status().expect("a draft").0, "Unsaved changes");
+    let _ = app.update(Message::Preference(Preference::Days("3".into())));
+    assert!(
+        app.docked_status()
+            .expect("invalid")
+            .0
+            .contains("history.days")
+    );
+    let _ = app.update(Message::RevertPreferences);
+    assert!(app.docked_status().is_none(), "reverted");
+
+    app.confirmed = Some(confirmed(Control::Save, "Preferences saved"));
+    assert_eq!(app.docked_status().expect("saved").0, "Preferences saved");
 }
 
 #[test]

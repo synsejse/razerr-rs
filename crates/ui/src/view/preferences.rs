@@ -1,14 +1,12 @@
-use super::PAGE_WIDTH;
 use crate::{
-    activity::Control,
     app::{App, Message, Preference},
     state::Confirmation,
 };
 use iced::{
-    Element, Fill,
+    Element,
     widget::{Column, row, text_input},
 };
-use iced_t3::{color, icon, style, widget as t3};
+use iced_t3::{icon, style, widget as t3};
 
 impl App {
     pub(super) fn preferences(&self) -> Element<'_, Message> {
@@ -16,6 +14,18 @@ impl App {
             .spacing(24)
             .push(self.notifications_section())
             .push(self.history_section())
+            .push(t3::section(
+                t3::section_title("Reset"),
+                None,
+                [t3::setting_titled(
+                    "Default preferences",
+                    t3::ghost(
+                        icon::UNDO_2,
+                        "Restore defaults…",
+                        Some(Message::Ask(Confirmation::Defaults)),
+                    ),
+                )],
+            ))
             .into()
     }
 
@@ -108,52 +118,12 @@ impl App {
         )
     }
 
-    pub(super) fn preferences_bar(&self) -> Element<'_, Message> {
-        let valid = self.state.draft.validated();
-        let changed = valid
-            .as_ref()
-            .is_ok_and(|settings| settings != &self.state.settings);
-        let saving = self.in_flight(Control::Save);
-        let mut status = row![].spacing(8).align_y(iced::Center).width(Fill);
-        if saving {
-            status = status.push(t3::dots());
-            status = status.push(t3::text("Saving preferences…", 13).color(color::MUTED));
-        } else if let Err(error) = &valid {
-            status = status.push(t3::text(error.clone(), 13).color(color::DANGER));
-        } else if changed {
-            status = status.push(t3::icon(icon::INFO).size(14).color(color::WARNING));
-            status = status.push(t3::text("Unsaved changes", 13).color(color::WARNING));
-        } else if self.just_confirmed(Control::Save) {
-            status = status.push(t3::check());
-            status = status.push(t3::text("Preferences saved", 13).color(color::SUCCESS));
-        }
-        t3::composer(
-            row![
-                status,
-                t3::ghost(
-                    icon::UNDO_2,
-                    "Restore defaults…",
-                    Some(Message::Ask(Confirmation::Defaults)),
-                ),
-                if saving {
-                    t3::primary_busy("Save changes")
-                } else {
-                    t3::primary("Save changes", changed.then_some(Message::Save))
-                },
-            ]
-            .spacing(8)
-            .align_y(iced::Center),
-            PAGE_WIDTH,
-            changed,
-        )
-    }
-
     pub(super) fn dialog<'a>(kind: Confirmation) -> Element<'a, Message> {
         let cancel = t3::outline(icon::X, "Cancel", Some(Message::Cancel));
         match kind {
             Confirmation::Defaults => t3::dialog(
                 "Restore default settings?",
-                "This replaces your unsaved edits. Save changes to apply the defaults. Battery history is kept.",
+                "This replaces your unsaved edits. Save to apply the defaults. Battery history is kept.",
                 [
                     cancel,
                     t3::primary("Restore defaults", Some(Message::Confirm)),

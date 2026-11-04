@@ -246,8 +246,9 @@ with every stage as a numbered vector. It edits one target at a time (the curren
 DPI or one stage), the same target the separate X/Y sliders and inputs edit. The
 lock between the rows constrains drags to the diagonal.
 
-Everything else on the device pages is a draft. A docked bar shows Revert and
-Apply, and Apply sends the section's validated commands in order, stopping at a
+Everything else on the device pages is a draft, and so are Preferences. One docked
+bar serves them all: it appears only when it has something to report, with Revert
+and the page's action beside the status. Apply sends the section's validated commands in order, stopping at a
 write failure (nothing is sent if any draft is invalid). Once the device confirms,
 its reported values replace the drafts, even if it normalized them.
 

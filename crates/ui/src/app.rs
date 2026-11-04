@@ -90,6 +90,8 @@ pub enum Message {
     /// Discard a section's unapplied device edits.
     Revert(Section),
     Preference(Preference),
+    /// Discard unsaved preferences.
+    RevertPreferences,
     /// A change ended; `Ok` carries the state the device reported afterwards.
     Finished(u64, Result<Arc<Snapshot>, String>),
     Image(String, Result<image::Handle, String>),
@@ -268,6 +270,7 @@ impl App {
                 | Message::Edit(_)
                 | Message::Revert(_)
                 | Message::Preference(_)
+                | Message::RevertPreferences
                 | Message::Save
                 | Message::Ask(_)
         )
@@ -388,6 +391,9 @@ impl App {
             Message::Revert(section) => self.state.revert(Some(section)),
             Message::Preference(preference) => {
                 self.preference(preference);
+            }
+            Message::RevertPreferences => {
+                self.state.draft = self.state.settings.clone().into();
             }
             Message::Finished(id, result) => return self.finished(id, result),
             Message::Image(source, result) => match result {
@@ -988,6 +994,7 @@ mod tests {
             Message::Refresh,
             Message::Save,
             Message::Ask(Confirmation::Defaults),
+            Message::RevertPreferences,
         ] {
             let _ = app.update(message);
         }
