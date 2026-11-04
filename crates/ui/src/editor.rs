@@ -152,6 +152,8 @@ pub struct Editor {
     pub stages: Vec<(String, String)>,
     pub active: u8,
     pub stages_dirty: bool,
+    pub poll_rate: Option<u16>,
+    pub poll_dirty: bool,
     pub target: Target,
     pub idle: String,
     pub idle_dirty: bool,
@@ -281,6 +283,23 @@ impl Editor {
     }
 
     fn sync_sensitivity(&mut self, device: &Device) {
+        let polling = device
+            .polling
+            .as_ref()
+            .and_then(|polling| polling.current.displayed())
+            .map(|rate| rate.get());
+        if device
+            .polling
+            .as_ref()
+            .and_then(|polling| polling.current.fresh())
+            .is_some_and(|rate| self.poll_rate == Some(rate.get()))
+        {
+            self.poll_dirty = false;
+        }
+        if !self.poll_dirty {
+            self.poll_rate = polling;
+        }
+
         if device
             .dpi
             .as_ref()
@@ -409,7 +428,7 @@ impl Editor {
     /// Whether a section has edits that have not been applied yet.
     pub fn dirty(&self, section: Section) -> bool {
         match section {
-            Section::Sensitivity => self.dpi_dirty || self.stages_dirty,
+            Section::Sensitivity => self.dpi_dirty || self.stages_dirty || self.poll_dirty,
             Section::Lighting => self
                 .zones
                 .values()
@@ -424,6 +443,7 @@ impl Editor {
             Section::Sensitivity => {
                 self.dpi_dirty = false;
                 self.stages_dirty = false;
+                self.poll_dirty = false;
             }
             Section::Lighting => {
                 for zone in self.zones.values_mut() {

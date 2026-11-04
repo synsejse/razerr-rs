@@ -1,6 +1,6 @@
 use iced::Task;
 use razerr_model::{
-    Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, Serial, ZoneId,
+    Command, Device, DpiRange, IdleTime, LowBatteryThreshold, Percent, PollRate, Serial, ZoneId,
 };
 
 use crate::{
@@ -65,6 +65,18 @@ fn draft(editor: &mut Editor, device: &Device, edit: Edit) -> Result<(), String>
             editor.x.clone_from(&value);
             editor.y = value;
             editor.dpi_dirty = true;
+        }
+        Edit::PollRate(rate) => {
+            let rate = PollRate::new(rate).map_err(|error| error.to_string())?;
+            if !device
+                .polling
+                .as_ref()
+                .is_some_and(|polling| polling.supported.contains(&rate))
+            {
+                return Err("That polling rate is unavailable".into());
+            }
+            editor.poll_rate = Some(rate.get());
+            editor.poll_dirty = true;
         }
         Edit::Target(target) => editor.select_target(target),
         Edit::Axis(axis, value) => editor.set_axis(axis, value)?,
@@ -146,6 +158,14 @@ fn apply(
     let mut commands = Vec::new();
     match section {
         Section::Sensitivity => {
+            if editor.poll_dirty {
+                commands.push(Command::SetPollRate {
+                    serial: id(),
+                    rate: PollRate::new(editor.poll_rate.ok_or("Polling rate is unavailable")?)
+                        .map_err(|error| error.to_string())?,
+                });
+            }
+
             // Stages first: activating a stage changes the current DPI, which an
             // explicit current-DPI edit should then override.
             if editor.stages_dirty {
@@ -243,6 +263,7 @@ mod tests {
             Edit::AxisPosition(Axis::X, 0.5),
             Edit::Axis(Axis::Y, "1200".into()),
             Edit::ActiveStage(1),
+            Edit::PollRate(500),
             Edit::Idle("600".into()),
         ] {
             assert_eq!(
@@ -256,7 +277,11 @@ mod tests {
         let commands = command(&mut state, Edit::Apply(Section::Sensitivity)).expect("apply");
         assert!(matches!(
             commands.as_slice(),
-            [Command::SetDpiStages { .. }, Command::SetDpi { .. }]
+            [
+                Command::SetPollRate { .. },
+                Command::SetDpiStages { .. },
+                Command::SetDpi { .. }
+            ]
         ));
         let power = command(&mut state, Edit::Apply(Section::Power)).expect("apply");
         assert!(matches!(power.as_slice(), [Command::SetIdleTime { .. }]));
@@ -287,5 +312,31 @@ mod tests {
             command(&mut state, Edit::Apply(Section::Sensitivity)).expect("nothing to apply"),
             Vec::<Command>::new()
         );
+    }
+    #[test]
+    fn polling_drafts_survive_snapshots_and_revert_without_a_write() {
+        let mut state = wired();
+        let original = state.editor.poll_rate;
+        command(&mut state, Edit::PollRate(500)).expect("draft");
+        let snapshot = state.snapshot.clone();
+        state.receive(snapshot);
+        assert_eq!(state.editor.poll_rate, Some(500));
+        assert!(state.editor.poll_dirty);
+        state.revert(Some(Section::Sensitivity));
+        assert_eq!(state.editor.poll_rate, original);
+        assert!(!state.editor.poll_dirty);
+        assert_eq!(
+            commands(&state, Section::Sensitivity).expect("clean"),
+            Vec::<Command>::new()
+        );
+    }
+
+    #[test]
+    fn unsupported_polling_choices_leave_the_draft_unchanged() {
+        let mut state = wired();
+        let original = state.editor.poll_rate;
+        assert!(command(&mut state, Edit::PollRate(123)).is_err());
+        assert_eq!(state.editor.poll_rate, original);
+        assert!(!state.editor.poll_dirty);
     }
 }

@@ -1,6 +1,5 @@
 use super::number_input;
 use crate::{
-    activity::Control,
     app::{App, Edit, Message},
     dpi_pad::{self, Pad},
     editor::{Axis, Target},
@@ -42,43 +41,30 @@ impl App {
         page.into()
     }
 
-    /// Switches stage on the device. It shows the stage the device reports and
-    /// writes its reported values, so it stays out of the way of stage drafts.
+    /// Chooses a draft active stage, including any unapplied stage values.
     fn stage_row(&self, device: &Device) -> Option<Element<'_, Message>> {
         let reading = device.stages.as_ref()?;
-        let stages = reading.displayed()?;
-        let dirty = self.state.editor.stages_dirty;
+        reading.displayed()?;
+        let editor = &self.state.editor;
         let usable = self.state.controls_enabled() && reading.fresh().is_some();
-        let segments = (1..).zip(stages.values()).map(|(stage, dpi)| {
-            let selected = stages.active() == stage;
+        let segments = (1..).zip(&editor.stages).map(|(stage, (x, y))| {
+            let selected = editor.active == stage;
             t3::segment(
                 format!("stage-{stage}"),
-                if dpi.x() == dpi.y() {
-                    dpi.x().to_string()
+                if x == y {
+                    x.clone()
                 } else {
-                    format!("{} × {}", dpi.x(), dpi.y())
+                    format!("{x} × {y}")
                 },
                 selected,
-                (usable && !dirty).then_some(if selected {
+                usable.then_some(if selected {
                     Message::Idle
                 } else {
-                    Message::ActivateStage(stage)
+                    Message::Edit(Edit::ActiveStage(stage))
                 }),
             )
         });
-        let mut control = t3::segmented(segments);
-        if usable && dirty {
-            control = t3::tooltip(
-                control,
-                "Apply or revert your stage edits first.",
-                t3::Position::Bottom,
-            );
-        }
-        let progress = (1..=5).find_map(|stage| self.progress(Control::Stage(stage)));
-        Some(t3::setting_titled(
-            "Active stage",
-            Self::with_progress(progress, control),
-        ))
+        Some(t3::setting_titled("Active stage", t3::segmented(segments)))
     }
 
     fn polling_row(&self, device: &Device) -> Option<Element<'_, Message>> {
@@ -89,7 +75,7 @@ impl App {
                 t3::muted("Polling rates unavailable"),
             ));
         }
-        let current = polling.current.displayed().map(|rate| rate.get());
+        let current = self.state.editor.poll_rate;
         let enabled = self.state.controls_enabled();
         let segments = polling.supported.iter().map(|rate| {
             let rate = rate.get();
@@ -101,16 +87,11 @@ impl App {
                 enabled.then_some(if selected {
                     Message::Idle
                 } else {
-                    Message::PollRate(rate)
+                    Message::Edit(Edit::PollRate(rate))
                 }),
             )
         });
         let control = t3::segmented(segments);
-        let progress = polling
-            .supported
-            .iter()
-            .find_map(|rate| self.progress(Control::Poll(rate.get())));
-        let control = Self::with_progress(progress, control);
         Some(match current.filter(|rate| *rate >= HIGH_POLLING) {
             Some(_) => t3::setting(
                 "Rate",

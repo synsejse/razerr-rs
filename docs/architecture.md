@@ -240,13 +240,13 @@ that wasn't measured. Canvas gradients use opaque stops, because translucent one
 show a hard step under MSAA on some GPUs.
 
 The sidebar is navigation with the device at its foot. The Sensitivity page has
-the active stage and polling rate, which write straight to the device, and the DPI
-editor. The pad shows a sensitivity as a point (X DPI, Y DPI) on logarithmic axes,
+the active stage, polling rate, and DPI editor. All three edit local drafts;
+the sensitivity Apply action sends them together. The pad shows a sensitivity as a point (X DPI, Y DPI) on logarithmic axes,
 with every stage as a numbered vector. It edits one target at a time (the current
 DPI or one stage), the same target the separate X/Y sliders and inputs edit. The
 lock between the rows constrains drags to the diagonal.
 
-Everything else on the device pages is a draft, and so are Preferences. One docked
+Every setting on the device pages is a draft, and so are Preferences. One docked
 bar serves them all: it appears only when it has something to report, with Revert
 and the page's action beside the status. Apply sends the section's validated commands in order, stopping at a
 write failure (nothing is sent if any draft is invalid). Once the device confirms,

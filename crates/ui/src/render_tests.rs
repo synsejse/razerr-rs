@@ -118,15 +118,24 @@ fn scenarios() -> Vec<(&'static str, App)> {
     scenes.push(("preferences", preferences));
 
     let mut app = demo(Page::Sensitivity);
-    app.pending = Some(activity(Control::Stage(2), "Switching to stage 2…"));
+    app.pending = Some(activity(
+        Control::Apply(Section::Sensitivity),
+        "Switching to stage 2…",
+    ));
     scenes.push(("stage-loading", app));
 
     let mut app = demo(Page::Sensitivity);
-    app.confirmed = Some(confirmed(Control::Stage(3), "Stage 3 active"));
+    app.confirmed = Some(confirmed(
+        Control::Apply(Section::Sensitivity),
+        "Stage 3 active",
+    ));
     scenes.push(("stage-confirmed", app));
 
     let mut app = demo(Page::Sensitivity);
-    app.pending = Some(activity(Control::Poll(500), "Setting polling to 500 Hz…"));
+    app.pending = Some(activity(
+        Control::Apply(Section::Sensitivity),
+        "Setting polling to 500 Hz…",
+    ));
     scenes.push(("polling-loading", app));
 
     let mut app = demo(Page::Sensitivity);
@@ -203,7 +212,10 @@ fn scenarios() -> Vec<(&'static str, App)> {
     app.state.preferences = false;
     snapshot.devices[0].dpi = app.state.snapshot.devices[0].dpi.clone();
     let mut app = with_snapshot(app, snapshot);
-    app.pending = Some(activity(Control::Stage(5), "Switching to stage 5…"));
+    app.pending = Some(activity(
+        Control::Apply(Section::Sensitivity),
+        "Switching to stage 5…",
+    ));
     scenes.push(("long-title", app));
 
     let mut app = demo(Page::Lighting);
@@ -473,7 +485,7 @@ fn stages_sent(messages: &[Message]) -> Vec<u8> {
     let mut stages: Vec<_> = messages
         .iter()
         .filter_map(|message| match message {
-            Message::ActivateStage(stage) => Some(*stage),
+            Message::Edit(Edit::ActiveStage(stage)) => Some(*stage),
             _ => None,
         })
         .collect();
@@ -486,7 +498,7 @@ fn rates_sent(messages: &[Message]) -> Vec<u16> {
     let mut rates: Vec<_> = messages
         .iter()
         .filter_map(|message| match message {
-            Message::PollRate(rate) => Some(*rate),
+            Message::Edit(Edit::PollRate(rate)) => Some(*rate),
             _ => None,
         })
         .collect();
@@ -496,7 +508,7 @@ fn rates_sent(messages: &[Message]) -> Vec<u16> {
 }
 
 #[test]
-fn only_the_other_choices_send_anything_to_the_device() {
+fn only_the_other_choices_produce_draft_edits() {
     load_fonts();
     let messages = click_page(&demo(Page::Sensitivity));
     assert_eq!(
@@ -524,12 +536,12 @@ fn the_sidebar_holds_no_device_settings() {
 }
 
 #[test]
-fn unapplied_stage_edits_lock_the_stage_choices() {
+fn unapplied_stage_edits_keep_other_stage_choices_available() {
     load_fonts();
     let mut app = demo(Page::Sensitivity);
     let _ = app.update(Message::Edit(Edit::ActiveStage(1)));
     assert!(app.state.editor.stages_dirty);
-    assert_eq!(stages_sent(&click_page(&app)), Vec::<u8>::new());
+    assert_eq!(stages_sent(&click_page(&app)), [2, 3, 4, 5]);
 }
 
 #[test]

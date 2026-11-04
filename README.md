@@ -29,3 +29,10 @@ To look around without a device, service or OpenRazer, run
 files.
 
 [Architecture](docs/architecture.md) · [Development](docs/development.md) · [Settings](docs/settings.md)
+
+
+Device controls are drafts: DPI stage activation, polling, DPI values, lighting,
+and power settings reach the device only when you press **Apply** for that page.
+**Revert** restores the reported values. Switching pages and background readings
+preserve unapplied drafts. Preferences retain their separate explicit **Save**
+action; selecting a stage with a keyboard shortcut also only changes its draft.

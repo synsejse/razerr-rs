@@ -36,6 +36,7 @@ pub enum Edit {
     Vector(u16, u16),
     Linked(bool),
     ActiveStage(u8),
+    PollRate(u16),
     AddStage,
     RemoveStage(usize),
     Idle(String),
@@ -71,9 +72,6 @@ pub enum Message {
     Page(Page),
     Preferences,
     Refresh,
-    /// Switch the device to a one-based DPI stage.
-    ActivateStage(u8),
-    PollRate(u16),
     Edit(Edit),
     /// Discard a section's unapplied device edits.
     Revert(Section),
@@ -217,7 +215,8 @@ impl App {
             .as_ref()
             .is_some_and(|activity| activity.control == control)
     }
-    pub fn just_confirmed(&self, control: Control) -> bool {
+    #[cfg(test)]
+    fn just_confirmed(&self, control: Control) -> bool {
         self.confirmed
             .as_ref()
             .is_some_and(|confirmed| confirmed.control == control)
@@ -229,8 +228,6 @@ impl App {
             message,
             Message::Select(_)
                 | Message::Refresh
-                | Message::ActivateStage(_)
-                | Message::PollRate(_)
                 | Message::Edit(_)
                 | Message::Revert(_)
                 | Message::Preference(_)
@@ -260,8 +257,6 @@ impl App {
             }
             Message::Preferences => return self.open_preferences(),
             Message::Refresh => return self.refresh(),
-            Message::ActivateStage(stage) => return self.activate_stage(stage),
-            Message::PollRate(rate) => return self.set_poll_rate(rate),
             Message::Edit(edit) => return self.edit(edit),
             Message::Revert(section) => self.state.revert(Some(section)),
             Message::Preference(preference) => self.preference(preference),
@@ -641,25 +636,26 @@ mod tests {
     #[test]
     fn progress_stays_on_its_control_until_the_write_is_confirmed() {
         let mut app = connected();
-        let _ = app.update(Message::ActivateStage(1));
-        assert!(app.in_flight(Control::Stage(1)));
-        assert!(!app.in_flight(Control::Stage(2)));
+        let _ = app.update(Message::Edit(Edit::ActiveStage(1)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
+        assert!(app.in_flight(Control::Apply(Section::Sensitivity)));
+        assert!(!app.in_flight(Control::Apply(Section::Power)));
         assert_eq!(
             app.pending.as_ref().expect("in flight").progress,
-            "Switching to stage 1…"
+            "Applying sensitivity…"
         );
         // A background poll is not the write's confirmation.
         let poll = changed(&app, |_| {});
         let _ = app.update(Message::Snapshot(poll));
-        assert!(app.in_flight(Control::Stage(1)));
+        assert!(app.in_flight(Control::Apply(Section::Sensitivity)));
         assert!(app.confirmed.is_none());
         let done = changed(&app, |snapshot| activate(snapshot, 1));
         let _ = app.update(Message::Finished(id(&app), Ok(done)));
         assert!(!app.busy());
-        assert!(app.just_confirmed(Control::Stage(1)));
+        assert!(app.just_confirmed(Control::Apply(Section::Sensitivity)));
         assert_eq!(
             app.confirmed.as_ref().expect("confirmed").text,
-            "Stage 1 active"
+            "Sensitivity applied"
         );
     }
 
@@ -667,7 +663,8 @@ mod tests {
     fn the_old_selection_stays_until_the_device_confirms() {
         let mut app = connected();
         let before = active_stage(&app);
-        let _ = app.update(Message::ActivateStage(1));
+        let _ = app.update(Message::Edit(Edit::ActiveStage(1)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
         assert_ne!(before, 1);
         assert_eq!(active_stage(&app), before, "still the confirmed stage");
         let done = changed(&app, |snapshot| activate(snapshot, 1));
@@ -679,7 +676,7 @@ mod tests {
     fn confirmation_expires_and_a_failure_never_confirms() {
         let mut app = connected();
         app.confirmed = Some(Confirmed {
-            control: Control::Stage(1),
+            control: Control::Apply(Section::Sensitivity),
             text: "Done".into(),
             at: Instant::now()
                 .checked_sub(crate::activity::CONFIRMATION)
@@ -687,7 +684,8 @@ mod tests {
         });
         let _ = app.update(Message::Frame);
         assert!(app.confirmed.is_none());
-        let _ = app.update(Message::PollRate(500));
+        let _ = app.update(Message::Edit(Edit::PollRate(500)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
         assert!(app.busy());
         let _ = app.update(Message::Finished(id(&app), Err("Write failed".into())));
         assert!(!app.busy());
@@ -700,13 +698,14 @@ mod tests {
         let mut app = connected();
         let _ = app.update(Message::Edit(Edit::Idle("600".into())));
         let draft = app.state.editor.idle.clone();
-        let _ = app.update(Message::PollRate(500));
+        let _ = app.update(Message::Edit(Edit::PollRate(500)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
         let first = id(&app);
         for message in [
             Message::Edit(Edit::Idle("900".into())),
             Message::Revert(Section::Power),
-            Message::ActivateStage(1),
-            Message::PollRate(125),
+            Message::Edit(Edit::ActiveStage(1)),
+            Message::Edit(Edit::PollRate(125)),
             Message::Refresh,
             Message::Save,
             Message::Ask(Confirmation::Defaults),
@@ -729,7 +728,8 @@ mod tests {
     #[test]
     fn losing_the_service_never_leaves_a_control_busy() {
         let mut app = connected();
-        let _ = app.update(Message::PollRate(500));
+        let _ = app.update(Message::Edit(Edit::PollRate(500)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
         let stale = id(&app);
         let _ = app.update(Message::Disconnected("gone".into()));
         assert!(!app.busy());
@@ -737,7 +737,8 @@ mod tests {
         // A reply that arrives after the fact can't end a newer change.
         let _ = app.update(Message::Snapshot(wired()));
         app.state.connected = true;
-        let _ = app.update(Message::PollRate(125));
+        let _ = app.update(Message::Edit(Edit::PollRate(125)));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
         let current = id(&app);
         assert_ne!(stale, current);
         let _ = app.update(Message::Finished(stale, Err("late".into())));
@@ -815,14 +816,20 @@ mod tests {
     }
 
     #[test]
-    fn a_stage_draft_never_reaches_the_device_through_a_stage_switch() {
+    fn stage_and_polling_choices_wait_for_apply_and_preserve_other_drafts() {
         let mut app = connected();
-        let _ = app.update(Message::Edit(Edit::Vector(2000, 2000)));
+        let before = app.state.snapshot.clone();
         let _ = app.update(Message::Edit(Edit::Target(Target::Stage(0))));
         let _ = app.update(Message::Edit(Edit::Vector(9000, 9000)));
-        assert!(app.state.editor.stages_dirty);
-        let _ = app.update(Message::ActivateStage(1));
-        assert!(!app.busy(), "stage edits must be applied or reverted first");
+        let _ = app.update(Message::Edit(Edit::ActiveStage(1)));
+        let _ = app.update(Message::Edit(Edit::PollRate(500)));
+        assert!(!app.busy());
+        assert!(Arc::ptr_eq(&app.state.snapshot, &before));
+        assert_eq!(app.state.editor.stages[0].0, "9000");
+        assert_eq!(app.state.editor.active, 1);
+        assert_eq!(app.state.editor.poll_rate, Some(500));
+        let _ = app.update(Message::Edit(Edit::Apply(Section::Sensitivity)));
+        assert!(app.in_flight(Control::Apply(Section::Sensitivity)));
     }
 
     #[test]

@@ -21,8 +21,6 @@ use crate::{
     state::Page,
 };
 
-pub use sensitivity::format_rate;
-
 /// Width of the page column (T3 Code's `max-w-4xl` less its gutters).
 pub const PAGE_WIDTH: f32 = 832.0;
 /// Display size of the app icon by the title.
@@ -174,30 +172,6 @@ impl App {
                 Page::Device => self.device_details(device),
             })
             .into()
-    }
-
-    /// Dots while `control` is in flight, then a check once the device confirms it.
-    fn progress<'a>(&self, control: Control) -> Option<Element<'a, Message>> {
-        if self.in_flight(control) {
-            Some(t3::dots())
-        } else if self.just_confirmed(control) {
-            Some(t3::check())
-        } else {
-            None
-        }
-    }
-
-    /// `content` with `progress` beside it. Controls sit at the right of their row,
-    /// so progress appearing doesn't move them.
-    fn with_progress<'a>(
-        progress: Option<Element<'a, Message>>,
-        content: impl Into<Element<'a, Message>>,
-    ) -> Element<'a, Message> {
-        let mut with_status = row![].spacing(10).align_y(iced::Center);
-        if let Some(progress) = progress {
-            with_status = with_status.push(progress);
-        }
-        with_status.push(content).into()
     }
 
     /// What the app is doing or just finished, in words. A change the docked bar

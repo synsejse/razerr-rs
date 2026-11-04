@@ -7,14 +7,13 @@ use std::{
 };
 
 use iced::Task;
-use razerr_model::{Command, DpiStages, PollRate, Serial, Snapshot};
+use razerr_model::{Command, Serial, Snapshot};
 use razerr_storage::Settings;
 
 use crate::{
     app::{App, Message},
     demo::Demo,
     state::Section,
-    view,
 };
 
 /// How long a finished change keeps its check mark.
@@ -24,9 +23,6 @@ pub const CONFIRMATION: Duration = Duration::from_millis(1600);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Control {
     Refresh,
-    /// One-based DPI stage being activated.
-    Stage(u8),
-    Poll(u16),
     Apply(Section),
     Save,
     ClearHistory,
@@ -101,78 +97,6 @@ impl App {
             text: activity.done,
             at: Instant::now(),
         });
-    }
-
-    /// Switches to a stage using the values the device reported, so unapplied
-    /// stage edits can't reach it this way.
-    pub(crate) fn activate_stage(&mut self, stage: u8) -> Task<Message> {
-        let Some(device) = self.state.selected() else {
-            return Task::none();
-        };
-        if self.state.editor.stages_dirty {
-            return Task::none();
-        }
-        let serial = device.serial.clone();
-        let stages = device
-            .stages
-            .as_ref()
-            .and_then(|reading| reading.fresh())
-            .ok_or("DPI stages are unavailable".to_owned())
-            .and_then(|stages| {
-                DpiStages::new(stage, stages.values().to_vec()).map_err(|error| error.to_string())
-            });
-        let command = stages.map(|stages| Command::SetDpiStages { serial, stages });
-        self.send_validated(
-            command,
-            Control::Stage(stage),
-            format!("Switching to stage {stage}…"),
-            format!("Stage {stage} active"),
-        )
-    }
-
-    pub(crate) fn set_poll_rate(&mut self, rate: u16) -> Task<Message> {
-        let Some(device) = self.state.selected() else {
-            return Task::none();
-        };
-        let serial = device.serial.clone();
-        let command = PollRate::new(rate)
-            .map_err(|error| error.to_string())
-            .map(|rate| Command::SetPollRate { serial, rate });
-        let label = view::format_rate(rate);
-        self.send_validated(
-            command,
-            Control::Poll(rate),
-            format!("Setting polling to {label}…"),
-            format!("Polling at {label}"),
-        )
-    }
-
-    /// One change straight from a control, once the device can accept it.
-    fn send_validated(
-        &mut self,
-        command: Result<Command, String>,
-        control: Control,
-        progress: String,
-        done: String,
-    ) -> Task<Message> {
-        let checked = command.and_then(|command| {
-            let device = self.state.selected().ok_or("Device was removed")?;
-            command
-                .validate(device)
-                .map_err(|error| error.to_string())?;
-            Ok::<_, String>(command)
-        });
-        match checked {
-            Ok(command) if self.state.controls_enabled() => {
-                let id = self.begin(control, progress, done);
-                self.send(id, vec![command])
-            }
-            Ok(_) => Task::none(),
-            Err(error) => {
-                self.state.error = Some(error);
-                Task::none()
-            }
-        }
     }
 
     pub(crate) fn apply(&mut self, section: Section, commands: Vec<Command>) -> Task<Message> {
