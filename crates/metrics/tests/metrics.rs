@@ -1,11 +1,6 @@
 //! Numeric scenarios from `Chromaven/tests/test_metrics.c`, retaining its epochs,
 //! time steps, sensor quantization, rates, thresholds and expected tolerances.
 
-#![allow(
-    clippy::float_cmp,
-    reason = "Numeric reference vectors deliberately compare exact sensor endpoints"
-)]
-
 use std::{error::Error, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
 use diesel::{Connection, SqliteConnection, connection::SimpleConnection};

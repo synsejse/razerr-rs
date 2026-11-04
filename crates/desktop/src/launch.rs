@@ -9,7 +9,7 @@ use std::{
 use crate::Error;
 
 /// Resolve a sibling executable without consulting PATH or invoking a shell.
-pub fn sibling_path(program: &str) -> Result<PathBuf, Error> {
+fn sibling_path(program: &str) -> Result<PathBuf, Error> {
     let executable = std::env::current_exe().map_err(|source| Error::Launch {
         path: PathBuf::from(program),
         source,
@@ -41,7 +41,7 @@ fn resolve_sibling(executable: &Path, program: &str) -> Result<PathBuf, Error> {
 
 /// Launch a detached sibling, and reap it without delaying the service loop.
 /// Standard input is closed; diagnostics retain the caller's stderr.
-pub fn launch_sibling(program: &str, arguments: &[&OsStr]) -> Result<(), Error> {
+fn launch_sibling(program: &str, arguments: &[&OsStr]) -> Result<(), Error> {
     let path = sibling_path(program)?;
     let mut command = Command::new(&path);
     command

@@ -18,7 +18,7 @@ diesel_migrations = "=2.3.2"
 futures-util = "=0.3.34"
 hex = "=0.4.3"
 iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "x11", "wayland", "tokio", "canvas", "image-without-codecs", "advanced"] }
-iced_aw = { version = "=0.14.1", default-features = false, features = ["number_input", "color_picker"] }
+iced_aw = { version = "=0.14.1", default-features = false, features = ["number_input"] }
 iced_t3 = { path = "crates/iced_t3", version = "=0.1.0" }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 indexmap = "=2.14.2"

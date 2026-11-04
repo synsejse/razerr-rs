@@ -4,7 +4,7 @@ pub mod launch;
 pub mod notifications;
 pub mod tray;
 
-pub use launch::{launch_gui, launch_sibling, sibling_path};
+pub use launch::launch_gui;
 pub use notifications::{Notification, Notifications};
 pub use tray::Tray;
 

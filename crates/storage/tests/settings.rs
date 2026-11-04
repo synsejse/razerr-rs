@@ -23,7 +23,6 @@ fn missing_file_uses_defaults_without_writing() -> TestResult {
     let (_directory, paths) = fixture()?;
     let settings = Settings::load(&paths)?;
     assert_eq!(settings, Settings::default());
-    assert!(!settings.appearance.dark);
     assert!(settings.notifications.connections);
     assert!(settings.notifications.battery);
     assert!(settings.history.enabled);
@@ -37,11 +36,11 @@ fn missing_file_uses_defaults_without_writing() -> TestResult {
 fn missing_fields_use_defaults() -> TestResult {
     let (_directory, paths) = fixture()?;
     paths.create_config_dir()?;
-    fs::write(paths.settings_file(), "[appearance]\ndark = true\n")?;
+    fs::write(paths.settings_file(), "[notifications]\nbattery = false\n")?;
     let settings = Settings::load(&paths)?;
-    assert!(settings.appearance.dark);
+    assert!(!settings.notifications.battery);
+    assert!(settings.notifications.connections);
     assert_eq!(settings.history.days, 90);
-    assert!(settings.notifications.battery);
     Ok(())
 }
 
@@ -51,10 +50,10 @@ fn saves_preserve_comments_unknown_keys_and_external_edits() -> TestResult {
     paths.create_config_dir()?;
     fs::write(
         paths.settings_file(),
-        "# Preferences\n[appearance] # Theme\n# Leave this note\ndark = false # Nighttime\ncustom = 'keep me'\n[future]\noption = 42\n",
+        "# Preferences\n[notifications] # Alerts\n# Leave this note\nbattery = true # Nighttime\ncustom = 'keep me'\n[future]\noption = 42\n",
     )?;
     let mut settings = Settings::load(&paths)?;
-    settings.appearance.dark = true;
+    settings.notifications.battery = false;
     settings.history.days = 7;
     settings.history.sample_seconds = 300;
     // The application must reread the document before saving, not use its old copy.
@@ -66,9 +65,9 @@ fn saves_preserve_comments_unknown_keys_and_external_edits() -> TestResult {
     let saved = fs::read_to_string(paths.settings_file())?;
     for retained in [
         "# Preferences",
-        "# Theme",
+        "# Alerts",
         "# Leave this note",
-        "dark = true # Nighttime",
+        "battery = false # Nighttime",
         "custom = 'keep me'",
         "option = 42",
         "added_later = 'external edit'",
@@ -83,12 +82,12 @@ fn inline_and_dotted_tables_keep_unknown_fields() -> TestResult {
     let (_directory, paths) = fixture()?;
     paths.create_config_dir()?;
     for original in [
-        "appearance = { dark = false, future = 1 } # Inline\n",
-        "appearance.dark = false # Dotted\nappearance.future = 1\n",
+        "notifications = { battery = true, future = 1 } # Inline\n",
+        "notifications.battery = true # Dotted\nnotifications.future = 1\n",
     ] {
         fs::write(paths.settings_file(), original)?;
         let mut settings = Settings::load(&paths)?;
-        settings.appearance.dark = true;
+        settings.notifications.battery = false;
         settings.save(&paths)?;
         assert_eq!(Settings::load(&paths)?, settings);
         let text = fs::read_to_string(paths.settings_file())?;
@@ -106,7 +105,7 @@ fn inline_and_dotted_tables_keep_unknown_fields() -> TestResult {
 fn atomic_replacement_keeps_existing_reader_on_complete_old_file() -> TestResult {
     let (_directory, paths) = fixture()?;
     paths.create_config_dir()?;
-    let original = "[appearance]\ndark = true\n";
+    let original = "[notifications]\nbattery = false\n";
     fs::write(paths.settings_file(), original)?;
     fs::set_permissions(paths.settings_file(), fs::Permissions::from_mode(0o644))?;
     let mut old_reader = File::open(paths.settings_file())?;
@@ -128,8 +127,7 @@ fn malformed_or_invalid_existing_file_is_never_overwritten() -> TestResult {
     let (_directory, paths) = fixture()?;
     paths.create_config_dir()?;
     for original in [
-        "[appearance\ndark = true\n",
-        "[appearance]\ndark = 'maybe'\n",
+        "[notifications\nbattery = true\n",
         "[notifications]\nconnections = 2\n",
         "[history]\ndays = 6\n",
         "[history]\ndays = 366\n",
@@ -138,7 +136,7 @@ fn malformed_or_invalid_existing_file_is_never_overwritten() -> TestResult {
         "[history]\nsample_seconds = 19\n",
         "[history]\nsample_seconds = 301\n",
         "[history]\nsample_seconds = 999999999999999999999\n",
-        "[appearance]\ndark = true\n[notifications]\nbattery = 'broken'\n",
+        "[notifications]\nconnections = true\nbattery = 'broken'\n",
     ] {
         fs::write(paths.settings_file(), original)?;
         assert!(Settings::load(&paths).is_err(), "accepted {original}");
@@ -176,18 +174,16 @@ fn failed_reload_keeps_entire_last_valid_settings() -> TestResult {
     let (_directory, paths) = fixture()?;
     let mut store = SettingsStore::new(paths.clone());
     let mut valid = Settings::default();
-    valid.appearance.dark = true;
+    valid.notifications.battery = false;
     valid.history.days = 365;
     valid.save(&paths)?;
     assert!(store.reload()?);
     assert!(!store.reload()?);
     fs::write(
         paths.settings_file(),
-        "[appearance]\ndark = false\n[history]\ndays = 1\n",
+        "[notifications]\nbattery = true\n[history]\ndays = 1\n",
     )?;
     assert!(store.reload().is_err());
-    assert_eq!(store.current(), &valid);
-    assert!(store.save(&Settings::default()).is_err());
     assert_eq!(store.current(), &valid);
     fs::remove_file(paths.settings_file())?;
     assert!(store.reload()?);
@@ -196,14 +192,13 @@ fn failed_reload_keeps_entire_last_valid_settings() -> TestResult {
 }
 
 #[test]
-fn successful_store_save_updates_cached_settings() -> TestResult {
+fn a_retired_setting_is_ignored_and_left_in_the_file() -> TestResult {
     let (_directory, paths) = fixture()?;
-    let mut store = SettingsStore::new(paths);
-    let mut settings = Settings::default();
-    settings.notifications.connections = false;
-    store.save(&settings)?;
-    assert_eq!(store.current(), &settings);
-    assert_eq!(Settings::load(store.paths())?, settings);
+    paths.create_config_dir()?;
+    fs::write(paths.settings_file(), "[appearance]\ndark = true\n")?;
+    assert_eq!(Settings::load(&paths)?, Settings::default());
+    Settings::default().save(&paths)?;
+    assert!(fs::read_to_string(paths.settings_file())?.contains("dark = true"));
     Ok(())
 }
 
@@ -237,13 +232,7 @@ fn paths_use_fresh_names_and_create_private_directories() -> TestResult {
     );
     paths.create_config_dir()?;
     paths.create_state_dir()?;
-    paths.create_images_dir()?;
-    for path in [
-        paths.config_dir(),
-        paths.state_dir(),
-        paths.cache_dir(),
-        &paths.images_dir(),
-    ] {
+    for path in [paths.config_dir(), paths.state_dir()] {
         assert_eq!(fs::metadata(path)?.permissions().mode() & 0o777, 0o700);
     }
     assert_eq!(

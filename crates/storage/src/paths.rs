@@ -59,10 +59,6 @@ impl Paths {
         &self.state
     }
 
-    pub fn cache_dir(&self) -> &Path {
-        &self.cache
-    }
-
     pub fn settings_file(&self) -> PathBuf {
         self.config.join("settings.toml")
     }
@@ -81,11 +77,6 @@ impl Paths {
 
     pub fn create_state_dir(&self) -> Result<(), Error> {
         create_private_dir(&self.state)
-    }
-
-    pub fn create_images_dir(&self) -> Result<(), Error> {
-        create_private_dir(&self.cache)?;
-        create_private_dir(&self.images_dir())
     }
 }
 

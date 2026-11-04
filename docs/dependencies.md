@@ -39,5 +39,5 @@ its own and pins the same iced as this workspace; keep the two in step. It doesn
 inherit the workspace lints, so `clippy` checks it at the default level.
 
 `iced_aw` 0.14.1 shares iced 0.14 with the app. Default features are disabled:
-number inputs and color picking are enabled explicitly. Its release version is
+number inputs are enabled explicitly. Its release version is
 pinned; upstream development branches may target a newer iced.

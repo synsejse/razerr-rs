@@ -9,9 +9,6 @@ read or create this file.
 These are the defaults:
 
 ```toml
-[appearance]
-dark = false
-
 [notifications]
 connections = true
 battery = true
@@ -21,9 +18,6 @@ enabled = true
 days = 90
 sample_seconds = 60
 ```
-
-The interface is always dark now, so `appearance.dark` has no effect. It stays
-valid in the file, and saving keeps it.
 
 Missing files and keys use defaults. History retention accepts 7–365 days;
 the sampling interval accepts 20–300 seconds. Boolean settings require TOML
@@ -47,5 +41,3 @@ directory permissions are not changed.
 Reading through a symlinked app directory is supported. Creating or saving
 inside one returns an error, so the library cannot accidentally change the
 permissions of the link's target.
-
-There is no importer for Chromaven's `settings.ini`.

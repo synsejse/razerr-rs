@@ -129,31 +129,6 @@ pub fn merge_reading<T: Clone>(
     }
 }
 
-/// Callers supply a previous level only for the same USB transport. Confirmed
-/// unavailable receivers invalidate even a recent cached battery value.
-pub fn battery_level(
-    previous: &Reading<Percent>,
-    reply: Option<f64>,
-    elapsed: Duration,
-    available: bool,
-    same_transport: bool,
-) -> Reading<Percent> {
-    if !available {
-        return Reading::Unavailable;
-    }
-    let previous = if same_transport {
-        previous
-    } else {
-        &Reading::Unavailable
-    };
-    merge_reading(
-        previous,
-        reply.and_then(|value| Percent::new(value).ok()),
-        elapsed,
-        Some(BATTERY_CACHE_TTL),
-    )
-}
-
 pub fn effect(
     kind: EffectKind,
     colors: &[u8],
@@ -209,58 +184,6 @@ pub fn effect(
     })
 }
 
-#[derive(Debug, PartialEq)]
-pub enum EffectArguments {
-    Bytes(Vec<u8>),
-    Direction(i32),
-    Ripple {
-        color: Option<Rgb>,
-        frame_seconds: f64,
-    },
-}
-
-pub fn effect_arguments(effect: &Effect) -> EffectArguments {
-    let mut bytes = Vec::new();
-    let mut append = |color: &Rgb| bytes.extend([color.red, color.green, color.blue]);
-    match effect {
-        Effect::Static { color } | Effect::Breath { color } => append(color),
-        Effect::BreathDual { colors } => {
-            append(&colors[0]);
-            append(&colors[1]);
-        }
-        Effect::Reactive { color, speed } | Effect::Starlight { color, speed } => {
-            append(color);
-            bytes.push(speed.get());
-        }
-        Effect::StarlightDual { colors, speed } => {
-            append(&colors[0]);
-            append(&colors[1]);
-            bytes.push(speed.get());
-        }
-        Effect::StarlightRandom { speed } => bytes.push(speed.get()),
-        Effect::Wave { direction } => {
-            return EffectArguments::Direction(match direction {
-                Direction::Left => 1,
-                Direction::Right => 2,
-            });
-        }
-        Effect::Ripple { color } => {
-            return EffectArguments::Ripple {
-                color: Some(*color),
-                frame_seconds: 0.05,
-            };
-        }
-        Effect::RippleRandom => {
-            return EffectArguments::Ripple {
-                color: None,
-                frame_seconds: 0.05,
-            };
-        }
-        Effect::Off | Effect::Spectrum | Effect::BreathRandom => {}
-    }
-    EffectArguments::Bytes(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,19 +233,12 @@ mod tests {
     #[test]
     fn battery_cache_expires_without_becoming_fresh() {
         let previous = Reading::Fresh(Percent::new(40.0).expect("percentage"));
-        let stale = battery_level(&previous, Some(-1.0), Duration::from_secs(20), true, true);
+        let limit = Some(BATTERY_CACHE_TTL);
+        let stale = merge_reading(&previous, None, Duration::from_secs(20), limit);
         assert!(matches!(stale, Reading::Stale { .. }));
         assert!(stale.fresh().is_none());
         assert!(matches!(
-            battery_level(&stale, None, Duration::from_secs(101), true, true),
-            Reading::Unavailable
-        ));
-        assert!(matches!(
-            battery_level(&previous, None, Duration::ZERO, true, false),
-            Reading::Unavailable
-        ));
-        assert!(matches!(
-            battery_level(&previous, Some(40.0), Duration::ZERO, false, true),
+            merge_reading(&stale, None, Duration::from_secs(101), limit),
             Reading::Unavailable
         ));
     }
@@ -358,16 +274,14 @@ mod tests {
         assert!(effect(EffectKind::BreathDual, &[1, 2, 3], None, None).is_err());
         assert!(effect(EffectKind::Reactive, &[1, 2, 3], Some(4), None).is_err());
         assert!(effect(EffectKind::Wave, &[], None, Some(3)).is_err());
-        let value = effect(
-            EffectKind::StarlightDual,
-            &[1, 2, 3, 4, 5, 6],
-            Some(2),
-            None,
-        )
-        .expect("effect");
-        assert_eq!(
-            effect_arguments(&value),
-            EffectArguments::Bytes(vec![1, 2, 3, 4, 5, 6, 2])
+        assert!(
+            effect(
+                EffectKind::StarlightDual,
+                &[1, 2, 3, 4, 5, 6],
+                Some(2),
+                None
+            )
+            .is_ok()
         );
     }
 }

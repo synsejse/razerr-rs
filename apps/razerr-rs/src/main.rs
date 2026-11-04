@@ -20,9 +20,6 @@ struct Cli {
     /// Open the preferences page.
     #[arg(long)]
     settings: bool,
-    /// Accepted for old launchers. The interface is always dark now.
-    #[arg(long = "dark", hide = true)]
-    _dark: bool,
     /// Open with made-up devices, without the service, OpenRazer or any files.
     #[arg(long, conflicts_with = "settings")]
     demo: bool,

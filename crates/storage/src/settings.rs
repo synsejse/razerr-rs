@@ -12,15 +12,8 @@ use crate::{Error, Paths};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    pub appearance: Appearance,
     pub notifications: Notifications,
     pub history: History,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Appearance {
-    pub dark: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,18 +89,15 @@ impl Settings {
 
         paths.create_config_dir()?;
         let path = paths.settings_file();
-        let mut temporary =
-            NamedTempFile::new_in(paths.config_dir()).map_err(|source| Error::io(&path, source))?;
+        let failed = |source| Error::io(&path, source);
+        let mut temporary = NamedTempFile::new_in(paths.config_dir()).map_err(failed)?;
         temporary
             .write_all(document.to_string().as_bytes())
-            .map_err(|source| Error::io(&path, source))?;
-        temporary
-            .as_file()
-            .sync_all()
-            .map_err(|source| Error::io(&path, source))?;
+            .map_err(failed)?;
+        temporary.as_file().sync_all().map_err(failed)?;
         temporary
             .persist(&path)
-            .map_err(|error| Error::io(&path, error.error))?;
+            .map_err(|error| failed(error.error))?;
         // Persist only renames; fsync the directory to make that rename durable.
         File::open(paths.config_dir())
             .and_then(|directory| directory.sync_all())
@@ -115,7 +105,7 @@ impl Settings {
     }
 }
 
-/// Own the last valid settings. Failed reloads and saves never replace them.
+/// Own the last valid settings. A failed reload never replaces them.
 #[derive(Debug)]
 pub struct SettingsStore {
     paths: Paths,
@@ -135,22 +125,12 @@ impl SettingsStore {
         &self.current
     }
 
-    pub fn paths(&self) -> &Paths {
-        &self.paths
-    }
-
     /// Return whether a valid reload changed any known setting.
     pub fn reload(&mut self) -> Result<bool, Error> {
         let next = Settings::load(&self.paths)?;
         let changed = self.current != next;
         self.current = next;
         Ok(changed)
-    }
-
-    pub fn save(&mut self, settings: &Settings) -> Result<(), Error> {
-        settings.save(&self.paths)?;
-        self.current = settings.clone();
-        Ok(())
     }
 }
 
