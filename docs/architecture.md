@@ -38,7 +38,8 @@ or history and never changes OpenRazer's daemon-wide synchronization setting.
 | `crates/metrics` | Private Diesel schema/connections, recording, sessions, retention, history and empirical predictions |
 | `crates/images` | Bounded PNG/JPEG loading, HTTP(S) downloads, validated disk cache and RGBA output |
 | `crates/desktop` | StatusNotifierItem tray, notification transport and launching sibling executables |
-| `crates/ui` | iced state, views, edits, service subscriptions, images and read-only history presentation |
+| `crates/ui` | iced state, views, edits, change tracking, service subscriptions, the offline demo, images and read-only history presentation |
+| `crates/iced_t3` | Submodule: theme, fonts, widgets and window decorations |
 | `apps/razerr-rs-service` | Service lifecycle, settings watch, notification policy and the dedicated history thread |
 | `apps/razerr-rs` | GUI process and diagnostic CLI entry point |
 
@@ -56,7 +57,7 @@ limitations are documented in [OpenRazer compatibility](openrazer-compatibility.
 | `State` property | `a{sv}` | Snapshot: revision, continuity/daemon generations, kind, devices, reliability, daemon availability, busy state and optional error |
 | `Refreshing` property | `b` | Full refresh in progress |
 | `Error` signal | `s` | Asynchronous device-operation failure |
-| `Refresh()` | No input | Queue a full refresh |
+| `Refresh()` | No input | Run a full refresh and reply when it ends |
 | `SetDpi` | `sqq` | Serial, X and Y |
 | `SetDpiStages` | `sya(qq)` | Serial, one-based active stage and stage values |
 | `SetPollRate`, `SetIdleTime` | `sq` | Serial and validated value |
@@ -71,9 +72,16 @@ Deserialization passes constrained scalar values through their constructors.
 The model remains independent of `zbus::wire`.
 
 Property changes use `org.freedesktop.DBus.Properties.PropertiesChanged`.
-Revisions let consumers discard repeated snapshots. A successful device setter
-reply means the validated command was queued; the subsequent state/error
-reports its outcome. The worker validates again against its current device
+Revisions let consumers discard repeated snapshots. A device setter replies when
+the worker has finished: success means the device was read back, and a failure
+arrives as a D-Bus error as well as in the state. A command replaced in the queue
+replies with how its replacement ended. Firmware can acknowledge a setter before
+applying it, so the worker reads back for up to about 2.2 seconds until the device
+shows the value. A write is sent once and never repeated, because a failed or
+unconfirmed write may still have reached the device. A value that never appears is
+reported; a setting with no fresh reading is not treated as a failure. Clients
+need a method timeout above the worst case; `razerr_ipc::Client` uses 45 seconds.
+The worker validates again against its current device
 state and re-reads USB identity immediately before sending a write to OpenRazer.
 The separate identity read and setter cannot be made atomic through upstream
 OpenRazer; a changed identity is rejected and followed by discovery.
@@ -91,8 +99,9 @@ A single Tokio actor owns the OpenRazer connection and serializes writes. A
 bounded command channel feeds a queue keyed by control, serial and lighting
 zone; repeated requests for the same setting coalesce. Surviving commands
 retain their last-request order, including interacting DPI and stage writes.
-Brightness and effect requests remain separate. Successful writes trigger a full readback so the
-published value reflects any normalization by the daemon.
+Brightness and effect requests remain separate. Successful writes are read back in full until
+the device shows them, so the published value reflects any normalization by the
+daemon; see the setter replies above.
 
 Normal live polling runs every 20 seconds. Unreliable discovery and inactive
 receivers retry after two seconds. Incomplete battery samples receive two
@@ -212,33 +221,42 @@ bind to an existing unique service owner, so connecting cannot indirectly
 activate an installed service. Packaging and the service manager own service
 startup and lifetime; the GUI reconnects when the service becomes available.
 The GUI registers `org.freedesktop.Application` with Activate and
-settings/dark/quit actions. Closing or quitting the GUI leaves the service
+settings/quit actions. Closing or quitting the GUI leaves the service
 running. Explicit service CLI and tray Stop/Quit actions remain available.
 Native rendering and lifecycle checks are recorded in
 [verification](verification.md).
 
 Views are split by screen/control group. A changed USB identity resets device
-editor drafts, even when the serial stays the same and a new getter is unavailable. A small focus wrapper adds Tab and
-Enter/Space support to iced buttons, switches and checkboxes; sliders use text alternatives
-and Escape cancels a pending drag. These wrappers have real widget-tree event
-tests. Confirmations initially focus Cancel and trap Tab until dismissal.
+editor drafts, even when the serial stays the same and a new getter is unavailable. `iced_t3` adds Tab and Enter/Space support to buttons and switches, and sliders
+use text alternatives with Escape cancelling a pending drag; it has widget-tree
+event tests for these. Confirmations initially focus Cancel and trap Tab until dismissal.
 
-`crates/ui/src/style.rs` is the only place that picks colors: it defines the
-light and dark palettes (Razer-green accent), surface tokens, the Inter
-Regular/SemiBold and Lucide icon fonts, and the styles of every standard widget.
-Two canvas programs in `dpi_pad.rs` draw custom controls without shaders: the
-battery ring and the DPI vector pad. The pad shows a sensitivity as a point
-(X DPI, Y DPI) on logarithmic axes, with every stage as a numbered vector. It
-edits one target at a time (the current DPI or one stage), the same target the
-separate X/Y sliders and inputs edit. The sliders use `iced_audio::HSlider`
-and the bounded numeric controls use `iced_aw::NumberInput`; their messages
-only update drafts. Scroll-wheel changes are disabled to avoid edits while
-scrolling the page. Stage selection, adding, removal and
-activation share this editor; there is no separate stages table. The lock between the X and Y rows
-constrains drags to the diagonal. Every device control only changes a local
-draft; a card with drafts shows Revert and Apply, and Apply sends that
-section's validated commands in order, stopping on a write failure (nothing
-is sent if any draft is invalid). Drafts become clean when the device reports the applied values.
+The design comes from `iced_t3`, a submodule at `crates/iced_t3`: theme, fonts,
+widgets and client-side window decorations. Anything generic that the app needs
+belongs there rather than here. `dpi_pad.rs` and `chart.rs` hold the canvas
+programs specific to this app: the battery ring, the DPI vector pad and the battery
+history chart, whose line is a monotone curve (`curve.rs`) that can't show a level
+that wasn't measured. Canvas gradients use opaque stops, because translucent ones
+show a hard step under MSAA on some GPUs.
+
+The sidebar is navigation with the device at its foot. The Sensitivity page has
+the active stage and polling rate, which write straight to the device, and the DPI
+editor. The pad shows a sensitivity as a point (X DPI, Y DPI) on logarithmic axes,
+with every stage as a numbered vector. It edits one target at a time (the current
+DPI or one stage), the same target the separate X/Y sliders and inputs edit. The
+lock between the rows constrains drags to the diagonal.
+
+Everything else on the device pages is a draft. A docked bar shows Revert and
+Apply, and Apply sends the section's validated commands in order, stopping at a
+write failure (nothing is sent if any draft is invalid). Once the device confirms,
+its reported values replace the drafts, even if it normalized them.
+
+`activity.rs` tracks the one change in flight and which control it belongs to.
+That control shows progress and the title bar names the action, then both show a
+check for 1.6 seconds. Other controls keep their look and ignore input until the
+device answers, and selections only ever show what the device reported. The app
+talks to a `Backend`: the service, or for `--demo` an in-process stand-in in
+`demo.rs` that uses no D-Bus and no files.
 
 On Wayland, iced/winit does not expose xdg-activation tokens: a second launch
 updates the existing window, but the compositor may keep it behind other
@@ -256,8 +274,10 @@ nixpkgs Rust toolchain. Build and test directly with Cargo; see
 Pure policy tests cover interpretation, caching, scheduling, notification
 rules and predictions. File/database tests use real temporary files; image
 HTTP tests use a local fixture server. Introspection fixtures are captured
-from actual hardware with provenance. There are no fake OpenRazer daemons,
-demo devices, mock D-Bus servers or private test buses. Real service and device
+from actual hardware with provenance. Writes can't be tested on a real mouse, so
+`crates/worker/tests/fake_daemon.rs` runs the worker against a fake OpenRazer on a
+private bus; it is ignored by default and refuses the desktop session bus. The
+demo devices in `crates/ui/fixtures` are made up and labelled as such. Real service and device
 checks are recorded in [verification](verification.md). Dependency maintenance
 notices and narrow advisory exceptions are documented in
 [dependencies](dependencies.md).

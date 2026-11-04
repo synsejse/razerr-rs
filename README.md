@@ -2,6 +2,17 @@
 
 OpenRazer device controls, a system tray, and battery history for Linux.
 
+The interface is built on [iced_t3](https://github.com/synsejse/iced_t3), a git
+submodule, so clone with submodules:
+
+```sh
+git clone --recurse-submodules https://github.com/synsejse/razerr-rs.git
+```
+
+In an existing clone, run `git submodule update --init`. GitHub's tarballs leave
+submodules out, so `github:` Nix inputs no longer work; see
+[Nix](docs/development.md#nix).
+
 With OpenRazer running in your desktop session:
 
 ```sh
@@ -12,5 +23,9 @@ cargo run --bin razerr-rs-service
 
 In another `nix-shell`, run `cargo run --bin razerr-rs`. The GUI only connects;
 packaging is responsible for starting the service in installed builds.
+
+To look around without a device, service or OpenRazer, run
+`cargo run --bin razerr-rs -- --demo`. It shows made-up devices and touches no
+files.
 
 [Architecture](docs/architecture.md) · [Development](docs/development.md) · [Settings](docs/settings.md)

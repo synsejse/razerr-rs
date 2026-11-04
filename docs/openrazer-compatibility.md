@@ -145,8 +145,9 @@ identity. Reading this state must never apply an effect. [Source][device].
   decision, not a separate protocol dependency.
 
 Tests exercise pure validation and reply interpretation. Capability fixtures
-are introspection XML captured from real devices. There is no fake daemon or
-mock D-Bus bus. Read-only probe checks validate the actual calls on available
+are introspection XML captured from real devices. A fake daemon on a private bus
+tests the worker's write path, which can't be exercised on real hardware without
+changing it. Read-only probe checks validate the actual calls on available
 hardware. Completed checks and remaining hardware-dependent scenarios are
 recorded in [verification.md](verification.md).
 

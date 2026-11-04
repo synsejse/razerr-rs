@@ -22,6 +22,9 @@ days = 90
 sample_seconds = 60
 ```
 
+The interface is always dark now, so `appearance.dark` has no effect. It stays
+valid in the file, and saving keeps it.
+
 Missing files and keys use defaults. History retention accepts 7–365 days;
 the sampling interval accepts 20–300 seconds. Boolean settings require TOML
 booleans. Parsing and range validation apply to the complete document before

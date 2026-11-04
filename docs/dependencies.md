@@ -25,15 +25,19 @@ as warnings, including the temporary zbus 5/6 split.
 
 iced image widgets use `image-without-codecs`. Decoding is confined to
 `razerr-images`, which enables PNG/JPEG only and enforces download/allocation
-limits. The application uses its own light/dark setting and does not enable
-iced's platform theme detection. SQLite links to the system library supplied by
+limits. The interface is always dark and does not enable iced's platform theme
+detection. SQLite links to the system library supplied by
 `shell.nix`; no copy of SQLite is bundled.
 
-The Cargo license allowlist covers the selected dependency graph. Inter and
-Lucide font license notices are kept beside their assets; they are not Cargo
-packages. Include these notices when distributing the assets.
+The Cargo license allowlist covers the selected dependency graph. Fonts come from
+`iced_t3`, whose Inter and Lucide license notices are kept beside its assets; they
+are not Cargo packages. Include these notices when distributing the assets.
 
-`iced_aw` 0.14.1 and `iced_audio` 0.17.1 share iced 0.14 with the app.
-Default features are disabled: number inputs/color picking and horizontal
-sliders/XY pads are enabled explicitly. Their release versions are pinned;
-upstream development branches may target a newer iced.
+`iced_t3` is a git submodule at `crates/iced_t3` and a workspace member, so it
+shares this lockfile and needs no extra Cargo source. It sets no `rust-version` of
+its own and pins the same iced as this workspace; keep the two in step. It doesn't
+inherit the workspace lints, so `clippy` checks it at the default level.
+
+`iced_aw` 0.14.1 shares iced 0.14 with the app. Default features are disabled:
+number inputs and color picking are enabled explicitly. Its release version is
+pinned; upstream development branches may target a newer iced.

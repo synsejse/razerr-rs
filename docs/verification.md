@@ -7,10 +7,14 @@ nix-shell --run 'cargo test --workspace --locked'
 ```
 
 This runs the unit, integration and documentation tests. Tests exercise pure
-logic, temporary files/databases,
-local HTTP image loading, and captures from actual hardware. No fake daemon or
-invented devices are used. See [dependency maintenance](dependencies.md) for
-transitive maintenance exceptions.
+logic, temporary files/databases, local HTTP image loading, captures from actual
+hardware, and the views rendered and clicked without a window. See
+[dependency maintenance](dependencies.md) for transitive maintenance exceptions.
+
+Two things are simulated, and neither can reach a device. `--demo` and the render
+tests use the made-up devices in `crates/ui/fixtures`. The write path test, ignored
+by default, runs the real worker against a fake `org.razer` on a private bus; see
+[development](development.md#write-path-test).
 
 Connect-only lifecycle checks passed with the real GUI and service binaries on
 an isolated D-Bus session: opening the GUI leaves an absent service stopped;
@@ -18,9 +22,30 @@ closing the window and `razerr-rs quit` leave an independently started service
 running; quitting with neither process running succeeds without starting either.
 These checks use X11 windows and do not simulate OpenRazer or devices.
 
+## Interface checks
+
+Checked on 2026-11-04 with an RX 9060 XT (RADV), in a private headless sway:
+
+- Rendering, including the chart gradient under MSAA, the effect list and dialogs.
+- Writes through the real GUI, service and D-Bus against a fake `org.razer`: a late
+  apply stays in progress until the readback, a failed setter leaves the selection
+  alone, each write is sent once, and killing the service mid-write leaves no
+  control stuck and repeats nothing. The app recovers when the service returns.
+- Moving the window by the sidebar header and title bar, resizing from a corner and
+  an edge, and closing it, which leaves the service running.
+
+Under Xvfb with openbox, in software: maximize and restore by button and by
+double-click, minimize, a second launch restoring a minimized window, Tab focus,
+and `razerr-rs quit`. Tiny-skia dims a dialog a little more on each focus change;
+this doesn't happen on the GPU.
+
+A real device's snapshot was also rendered through the harness. The redesigned GUI
+has not yet changed a setting on real hardware.
+
 ## Hardware coverage
 
-Verified on NixOS with KDE Plasma, OpenRazer 3.12.4 and a DeathAdder V3 Pro:
+Verified on NixOS with KDE Plasma, OpenRazer 3.12.4 and a DeathAdder V3 Pro, before
+the iced_t3 redesign:
 
 - Wired (`1532:00c2`, 1000 Hz) and wireless (`1532:00c3`, 8000 Hz) discovery,
   live state, DPI/stages, battery/charging and the high-polling warning.
