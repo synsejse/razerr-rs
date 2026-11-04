@@ -4,6 +4,13 @@ Direct dependencies are pinned in the workspace manifest; `Cargo.lock` is
 checked in. Run `cargo deny --locked check` inside `nix-shell` to inspect
 sources, licenses, advisories and duplicate versions.
 
+The `openrazer` D-Bus bindings come from a pinned commit of
+[synsejse/openrazer-rs](https://github.com/synsejse/openrazer-rs), the one git
+source `deny.toml` allows. Its manifest entry keeps a `version` as well as the
+`rev`, because `cargo deny` treats an unversioned git dependency as a wildcard.
+Updating the pin also changes the Nix hash described in
+[development](development.md#nix).
+
 Five maintenance notices have narrow, documented exceptions in `deny.toml`:
 
 - iced 0.14's graphics dependencies still use the discontinued `paste` macro
@@ -33,10 +40,11 @@ The Cargo license allowlist covers the selected dependency graph. Fonts come fro
 `iced_t3`, whose Inter and Lucide license notices are kept beside its assets; they
 are not Cargo packages. Include these notices when distributing the assets.
 
-`iced_t3` is a git submodule at `crates/iced_t3` and a workspace member, so it
-shares this lockfile and needs no extra Cargo source. It sets no `rust-version` of
-its own and pins the same iced as this workspace; keep the two in step. It doesn't
-inherit the workspace lints, so `clippy` checks it at the default level.
+`iced_t3` and `openrazer` are Cargo Git dependencies pinned by full revision and
+exact package version in the workspace manifest. Their repositories are explicitly
+allowed in `deny.toml`. Their tests and examples run in their own checkouts; they
+are not workspace members. Update the pin, lockfile and Nix source hash together.
+Bundled font license copies for distribution are in `packaging/licenses/`.
 
 `iced_aw` 0.14.1 shares iced 0.14 with the app. Default features are disabled:
 number inputs are enabled explicitly. Its release version is

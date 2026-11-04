@@ -3,7 +3,9 @@
 pub mod caps;
 mod client;
 pub mod interpret;
-pub mod protocol;
+pub mod lighting;
+mod read;
 mod write;
 
-pub use client::{Client, Error, ProbeReport, ReadWarning, probe};
+pub use client::{Client, Error};
+pub use read::{ProbeReport, ReadWarning, probe};

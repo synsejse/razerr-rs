@@ -2,9 +2,13 @@ use razerr_model::{Command, Device, Direction, Effect, ZoneId};
 use serde::Serialize;
 use zbus::wire::DynamicType;
 
-use crate::{
-    Client, Error,
-    protocol::{self, DPI, MISC, POWER},
+use crate::{Client, Error, client::device_path, lighting};
+use openrazer::{
+    Method,
+    methods::{
+        device_dpi as dpi, device_lighting_chroma as chroma, device_lighting_custom as custom,
+        device_misc as misc, device_power as power,
+    },
 };
 
 impl Client {
@@ -15,9 +19,9 @@ impl Client {
             operation: "validate command".into(),
             detail: error.to_string(),
         })?;
-        let path = format!("/org/razer/device/{}", device.serial);
+        let path = device_path(&device.serial);
         if !matches!(command, Command::Refresh) {
-            let usb: Vec<i32> = self.get(&path, MISC, "getVidPid").await?;
+            let usb: Vec<i32> = self.get(&path, &misc::GET_VID_PID).await?;
             if device.usb.is_none() || crate::interpret::usb_id(&usb).ok() != device.usb {
                 return Err(Error::Call {
                     operation: "validate transport".into(),
@@ -28,7 +32,7 @@ impl Client {
         match command {
             Command::Refresh => Ok(()),
             Command::SetDpi { dpi, .. } => {
-                self.set(&path, DPI, "setDPI", &(dpi.x(), dpi.y())).await
+                self.set(&path, &dpi::SET_DPI, &(dpi.x(), dpi.y())).await
             }
             Command::SetDpiStages { stages, .. } => {
                 let values: Vec<_> = stages
@@ -36,30 +40,25 @@ impl Client {
                     .iter()
                     .map(|value| (value.x(), value.y()))
                     .collect();
-                self.set(&path, DPI, "setDPIStages", &(stages.active(), values))
+                self.set(&path, &dpi::SET_DPI_STAGES, &(stages.active(), values))
                     .await
             }
             Command::SetPollRate { rate, .. } => {
-                self.set(&path, MISC, "setPollRate", &(rate.get(),)).await
+                self.set(&path, &misc::SET_POLL_RATE, &(rate.get(),)).await
             }
             Command::SetIdleTime { seconds, .. } => {
-                self.set(&path, POWER, "setIdleTime", &(seconds.get(),))
+                self.set(&path, &power::SET_IDLE_TIME, &(seconds.get(),))
                     .await
             }
             Command::SetLowBattery { percent, .. } => {
-                self.set(&path, POWER, "setLowBatteryThreshold", &(percent.get(),))
+                self.set(&path, &power::SET_LOW_BATTERY_THRESHOLD, &(percent.get(),))
                     .await
             }
             Command::SetBrightness {
                 zone, brightness, ..
             } => {
-                self.set(
-                    &path,
-                    protocol::brightness_interface(*zone),
-                    &format!("set{}Brightness", protocol::zone_prefix(*zone)),
-                    &(brightness.get(),),
-                )
-                .await
+                self.set(&path, lighting::set_brightness(*zone), &(brightness.get(),))
+                    .await
             }
             Command::SetEffect { zone, effect, .. } => {
                 self.write_effect(&path, *zone, effect).await
@@ -68,20 +67,31 @@ impl Client {
     }
 
     async fn write_effect(&self, path: &str, zone: ZoneId, effect: &Effect) -> Result<(), Error> {
-        let (interface, method) =
-            protocol::effect_endpoint(zone, effect.kind()).ok_or_else(|| Error::Call {
+        // Starlight and ripple exist only on the main zone, so the arms below name
+        // its methods directly. Never let them land on a zone that wasn't asked for.
+        if lighting::effect_method(zone, effect.kind()).is_none() {
+            return Err(Error::Call {
                 operation: "effect".into(),
                 detail: "unsupported effect endpoint".into(),
-            })?;
+            });
+        }
         match effect {
             Effect::Off | Effect::Spectrum | Effect::BreathRandom => {
-                self.set(path, interface, &method, &()).await
+                let method = match effect {
+                    Effect::Off => lighting::off(zone),
+                    Effect::Spectrum => lighting::spectrum(zone),
+                    _ => lighting::breath_random(zone),
+                };
+                self.set(path, method, &()).await
             }
             Effect::Static { color } | Effect::Breath { color } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    if matches!(effect, Effect::Static { .. }) {
+                        lighting::static_color(zone)
+                    } else {
+                        lighting::breath(zone)
+                    },
                     &(color.red, color.green, color.blue),
                 )
                 .await
@@ -89,8 +99,7 @@ impl Client {
             Effect::BreathDual { colors: [a, b] } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    lighting::breath_dual(zone),
                     &(a.red, a.green, a.blue, b.red, b.green, b.blue),
                 )
                 .await
@@ -98,8 +107,11 @@ impl Client {
             Effect::Reactive { color, speed } | Effect::Starlight { color, speed } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    if matches!(effect, Effect::Reactive { .. }) {
+                        lighting::reactive(zone)
+                    } else {
+                        &chroma::SET_STARLIGHT_SINGLE
+                    },
                     &(color.red, color.green, color.blue, speed.get()),
                 )
                 .await
@@ -110,20 +122,20 @@ impl Client {
             } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    &chroma::SET_STARLIGHT_DUAL,
                     &(a.red, a.green, a.blue, b.red, b.green, b.blue, speed.get()),
                 )
                 .await
             }
             Effect::StarlightRandom { speed } => {
-                self.set(path, interface, &method, &(speed.get(),)).await
+                self.set(path, &chroma::SET_STARLIGHT_RANDOM, &(speed.get(),))
+                    .await
             }
             Effect::Wave { direction } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    lighting::wave(zone),
+                    // Preserve the app's existing mapping during the binding migration.
                     &(match direction {
                         Direction::Left => 1_i32,
                         Direction::Right => 2,
@@ -134,23 +146,24 @@ impl Client {
             Effect::Ripple { color } => {
                 self.set(
                     path,
-                    interface,
-                    &method,
+                    &custom::SET_RIPPLE,
                     &(color.red, color.green, color.blue, 0.05_f64),
                 )
                 .await
             }
-            Effect::RippleRandom => self.set(path, interface, &method, &(0.05_f64,)).await,
+            Effect::RippleRandom => {
+                self.set(path, &custom::SET_RIPPLE_RANDOM_COLOUR, &(0.05_f64,))
+                    .await
+            }
         }
     }
 
     async fn set<B: Serialize + DynamicType>(
         &self,
         path: &str,
-        interface: &str,
-        method: &str,
+        method: &Method<B, ()>,
         body: &B,
     ) -> Result<(), Error> {
-        self.call(path, interface, method, body).await.map(drop)
+        self.call(path, method, body).await
     }
 }

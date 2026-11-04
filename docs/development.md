@@ -5,8 +5,7 @@ libraries. OpenRazer must run on the same desktop session bus.
 
 ## Build and run
 
-`crates/iced_t3` is a git submodule. Clone with `--recurse-submodules`, or run
-`git submodule update --init` in an existing clone.
+Clone normally; Cargo fetches the pinned `iced_t3` and `openrazer` Git sources.
 
 ```sh
 nix-shell
@@ -47,8 +46,9 @@ cargo test --workspace --locked
 cargo deny --locked check
 ```
 
-These include `iced_t3`, which is a workspace member. To change it, commit and
-push in its own repository, then bump the submodule here.
+Library tests run separately in the `iced_t3` and `openrazer-rs` repositories.
+To change either library, commit and push there, then update its workspace
+manifest revision, Cargo lockfile and Nix source hash here.
 
 For a focused change, select a crate with `-p`, for example
 `cargo test -p razerr-metrics`. See [migrations](migrations.md) for Diesel schema
@@ -78,17 +78,35 @@ private bus:
 dbus-run-session -- cargo test -p razerr-worker --test fake_daemon -- --ignored
 ```
 
+`crates/worker/tests/library_adapter.rs` runs the same way, with `--test
+library_adapter`. It covers the wire shapes, write guards and signal-driven
+reconnection of the adapter over the `openrazer` library.
+
 ## Nix
 
-GitHub tarballs leave submodules out, so a `github:` flake input arrives with
-`crates/iced_t3` empty and fails to build. Use a git input that asks for them:
+No submodules remain, so a normal GitHub input works:
 
 ```nix
 razerr-rs = {
-  url = "git+https://github.com/synsejse/razerr-rs?ref=main&submodules=1";
+  url = "github:synsejse/razerr-rs";
   flake = false;
 };
 ```
+
+`rustPlatform.buildRustPackage` needs source hashes for both Git dependencies.
+Use the checked-in map to keep package definitions in step with the pins:
+
+```nix
+cargoLock = {
+  lockFile = "${razerrSource}/Cargo.lock";
+  outputHashes = import "${razerrSource}/packaging/cargo-git-hashes.nix";
+};
+```
+
+Update `packaging/cargo-git-hashes.nix` whenever either revision changes. Fetch
+and verify the new source hash with `nix flake prefetch --json` for the pinned
+Git URL, then check the package build. Install the font notices from
+`packaging/licenses/inter/LICENSE.txt` and `packaging/licenses/lucide/LICENSE`.
 
 ## Release builds
 

@@ -14,7 +14,6 @@ use tokio::{
     task::JoinHandle,
     time::Instant,
 };
-use zbus::{MatchRule, MessageStream, message::Type};
 
 use crate::{
     cache,
@@ -467,11 +466,9 @@ fn merge_readings(
         for zone in &mut new.zones {
             // Only I/O failures retain remembered lighting. An unknown
             // effect or unsupported parameter must remain unavailable.
-            let prefix = razerr_openrazer::protocol::zone_prefix(zone.id);
             let io_failed = warnings.iter().any(|warning| {
                 warning.serial == new.serial.as_str()
-                    && (warning.operation.starts_with(&format!("get{prefix}Effect"))
-                        || warning.operation == format!("get{prefix}WaveDir"))
+                    && razerr_openrazer::lighting::is_effect_read(zone.id, &warning.operation)
                     && warning.transient
             });
             if io_failed
@@ -573,27 +570,12 @@ async fn watch_changes(changed: mpsc::Sender<()>, generation: Arc<AtomicU64>) {
 
 async fn listen_changes(changed: &mpsc::Sender<()>, generation: &AtomicU64) -> Result<(), String> {
     let client = Client::connect().await.map_err(|error| error.to_string())?;
-    let device_rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .sender("org.razer")
-        .interface("razer.devices")
-        .path("/org/razer")
-        .build()
-        .map_err(|error| error.to_string())?;
-    let owner_rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .sender("org.freedesktop.DBus")
-        .interface("org.freedesktop.DBus")
-        .path("/org/freedesktop/DBus")
-        .member("NameOwnerChanged")
-        .arg(0, "org.razer")
-        .build()
-        .map_err(|error| error.to_string())?;
-    let capacity = std::num::NonZeroUsize::new(16);
-    let mut devices = MessageStream::for_match_rule(device_rule, client.connection(), capacity)
+    let mut devices = client
+        .device_events()
         .await
         .map_err(|error| error.to_string())?;
-    let mut owners = MessageStream::for_match_rule(owner_rule, client.connection(), capacity)
+    let mut owners = client
+        .owner_events()
         .await
         .map_err(|error| error.to_string())?;
     loop {

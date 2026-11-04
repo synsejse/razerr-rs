@@ -19,7 +19,7 @@ futures-util = "=0.3.34"
 hex = "=0.4.3"
 iced = { version = "=0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "x11", "wayland", "tokio", "canvas", "image-without-codecs", "advanced"] }
 iced_aw = { version = "=0.14.1", default-features = false, features = ["number_input"] }
-iced_t3 = { path = "crates/iced_t3", version = "=0.1.0" }
+iced_t3 = { git = "https://github.com/synsejse/iced_t3", rev = "c9be75b7f1c3b1f32ee9328aa90ceb2c8dc6fee5", version = "=0.1.0" }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 indexmap = "=2.14.2"
 ksni = "=0.3.7"
@@ -37,7 +37,7 @@ toml_edit = { version = "=0.25.17", features = ["serde"] }
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 zbus = { version = "=6.1.0", default-features = false, features = ["tokio", "proxy", "service", "tracing"] }
-zbus_xml = "=6.0.0"
+openrazer = { git = "https://github.com/synsejse/openrazer-rs", rev = "307533767fec1c6a7e490905e395817e1f8a4595", version = "=0.2.0" }
 razerr-model = { path = "crates/model", version = "=0.1.0" }
 razerr-openrazer = { path = "crates/openrazer", version = "=0.1.0" }
 razerr-storage = { path = "crates/storage", version = "=0.1.0" }

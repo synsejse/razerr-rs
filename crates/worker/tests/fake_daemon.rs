@@ -138,7 +138,7 @@ fn assert_private_bus() {
     let address = std::env::var("DBUS_SESSION_BUS_ADDRESS").expect("run under dbus-run-session");
     let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
     assert!(
-        address != format!("unix:path={runtime}/bus"),
+        !address.contains(&format!("{runtime}/bus")),
         "refusing to run on the desktop session bus"
     );
 }

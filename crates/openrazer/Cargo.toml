@@ -10,9 +10,8 @@ razerr-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 zbus.workspace = true
-zbus_xml.workspace = true
+openrazer.workspace = true
 
 [lints]
 workspace = true

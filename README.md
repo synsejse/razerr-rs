@@ -2,16 +2,15 @@
 
 OpenRazer device controls, a system tray, and battery history for Linux.
 
-The interface is built on [iced_t3](https://github.com/synsejse/iced_t3), a git
-submodule, so clone with submodules:
+The interface uses [iced_t3](https://github.com/synsejse/iced_t3), and device
+transport uses [openrazer-rs](https://github.com/synsejse/openrazer-rs). Both are
+Cargo Git dependencies pinned to exact revisions; no submodules are required.
 
 ```sh
-git clone --recurse-submodules https://github.com/synsejse/razerr-rs.git
+git clone https://github.com/synsejse/razerr-rs.git
 ```
 
-In an existing clone, run `git submodule update --init`. GitHub's tarballs leave
-submodules out, so `github:` Nix inputs no longer work; see
-[Nix](docs/development.md#nix).
+See [Nix](docs/development.md#nix) for dependency source hashes.
 
 With OpenRazer running in your desktop session:
 

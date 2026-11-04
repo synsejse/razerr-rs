@@ -31,7 +31,7 @@ or history and never changes OpenRazer's daemon-wide synchronization setting.
 | Component | Responsibility |
 | --- | --- |
 | `crates/model` | Validated domain values, commands, capabilities, readings and snapshots; no I/O, runtime or D-Bus types |
-| `crates/openrazer` | Exact-signature introspection, bounded D-Bus calls, device reads/writes and pure reply interpretation |
+| `crates/openrazer` | Adapter over the `openrazer` library: maps its typed methods and exact-signature introspection to app capabilities, device reads/writes and pure reply interpretation |
 | `crates/worker` | Device actor, command coalescing, polling/retries, hotplug observation and cache ownership |
 | `crates/ipc` | Native D-Bus snapshot encoding, service interfaces, proxies and command validation at the service boundary |
 | `crates/storage` | XDG paths, typed TOML settings, atomic saves and last-valid reloads |
@@ -39,7 +39,6 @@ or history and never changes OpenRazer's daemon-wide synchronization setting.
 | `crates/images` | Bounded PNG/JPEG loading, HTTP(S) downloads, validated disk cache and RGBA output |
 | `crates/desktop` | StatusNotifierItem tray, notification transport and launching sibling executables |
 | `crates/ui` | iced state, views, edits, change tracking, service subscriptions, the offline demo, images and read-only history presentation |
-| `crates/iced_t3` | Submodule: theme, fonts, widgets and window decorations |
 | `apps/razerr-rs-service` | Service lifecycle, settings watch, notification policy and the dedicated history thread |
 | `apps/razerr-rs` | GUI process and diagnostic CLI entry point |
 
@@ -131,7 +130,8 @@ broadcast channel carries errors. Monotonic continuity and daemon-generation
 counters carry missed failures/owner changes through coalesced snapshots. The
 history writer breaks continuity and the monitor resets its baseline from
 these counters, even if the intermediate unavailable value was overwritten.
-OpenRazer calls have bounded timeouts;
+OpenRazer calls have bounded timeouts. The adapter opts into D-Bus activation
+to preserve startup behavior when a daemon activation service is installed;
 aborting the actor also aborts its signal-listener task.
 
 ## History and predictions
@@ -231,7 +231,7 @@ editor drafts, even when the serial stays the same and a new getter is unavailab
 use text alternatives with Escape cancelling a pending drag; it has widget-tree
 event tests for these. Confirmations initially focus Cancel and trap Tab until dismissal.
 
-The design comes from `iced_t3`, a submodule at `crates/iced_t3`: theme, fonts,
+The design comes from the pinned `iced_t3` Git dependency: theme, fonts,
 widgets and client-side window decorations. Anything generic that the app needs
 belongs there rather than here. `ring.rs`, `dpi_pad.rs` and `chart.rs` hold the
 canvas programs specific to this app: the battery ring, the DPI vector pad and the
@@ -277,7 +277,9 @@ rules and predictions. File/database tests use real temporary files; image
 HTTP tests use a local fixture server. Introspection fixtures are captured
 from actual hardware with provenance. Writes can't be tested on a real mouse, so
 `crates/worker/tests/fake_daemon.rs` runs the worker against a fake OpenRazer on a
-private bus; it is ignored by default and refuses the desktop session bus. The
+private bus, and `crates/worker/tests/library_adapter.rs` does the same for the
+adapter's wire shapes, write guards and signal-driven reconnection; both are
+ignored by default and refuse the desktop session bus. The
 demo devices in `crates/ui/fixtures` are made up and labelled as such. Real service and device
 checks are recorded in [verification](verification.md). Dependency maintenance
 notices and narrow advisory exceptions are documented in
