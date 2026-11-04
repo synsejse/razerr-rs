@@ -58,38 +58,63 @@ impl App {
         for device in devices {
             let selected =
                 !self.state.preferences && self.state.selected.as_ref() == Some(&device.serial);
-            rows = rows.push(t3::sidebar_device(
-                format!("device-{}", device.serial),
-                self.device_picture(device),
-                device_name(device),
-                device_detail(device),
+            let item = t3::SidebarDevice {
+                media: self.device_picture(device),
+                title: device_name(device).into(),
+                detail: device_detail(device).into(),
                 selected,
-                (devices.len() > 1).then(|| Message::Select(device.serial.clone())),
-            ));
+            };
+            rows = rows.push(if devices.len() > 1 {
+                t3::sidebar_device(
+                    format!("device-{}", device.serial),
+                    item,
+                    Some(Message::Select(device.serial.clone())),
+                )
+            } else {
+                device_label(item)
+            });
         }
         if devices.is_empty() {
-            rows = rows.push(t3::sidebar_device(
-                "device-none",
-                t3::icon_tile(icon::MOUSE, 32),
-                "No device",
-                if self.state.connected {
+            rows = rows.push(device_label(t3::SidebarDevice {
+                media: t3::icon_tile(icon::MOUSE, t3::TileSize::Compact),
+                title: "No device".into(),
+                detail: if self.state.connected {
                     "Nothing connected"
                 } else {
                     "Waiting for the service"
-                },
-                false,
-                None,
-            ));
+                }
+                .into(),
+                selected: false,
+            }));
         }
         column![t3::divider(), container(rows).padding([6, 0])].into()
     }
 
     fn device_picture<'a>(&self, device: &Device) -> Element<'a, Message> {
         self.loaded_picture(device, 32).map_or_else(
-            || t3::icon_tile(device_glyph(device.kind.as_deref()), 32),
+            || t3::icon_tile(device_glyph(device.kind.as_deref()), t3::TileSize::Compact),
             Element::from,
         )
     }
+}
+
+// A single device is a passive label, not a disabled selection button.
+fn device_label(item: t3::SidebarDevice<'_, Message>) -> Element<'_, Message> {
+    container(
+        row![
+            item.media,
+            column![
+                t3::text(item.title, 13).font(font::MEDIUM),
+                t3::muted(item.detail).size(11),
+            ]
+            .spacing(2)
+            .width(Fill),
+        ]
+        .spacing(10)
+        .align_y(iced::Center),
+    )
+    .padding([6, 8])
+    .into()
 }
 
 fn device_detail(device: &Device) -> String {

@@ -55,7 +55,7 @@ fn launch(boot: impl Fn() -> (app::App, Task<app::Message>) + 'static) -> iced::
         .title("razerr-rs")
         .theme(|_: &app::App| iced_t3::theme())
         .subscription(app::App::subscription)
-        .settings(iced_t3::settings())
+        .settings(iced_t3::settings_for("org.razerr_rs.App"))
         .font(iced_aw::ICED_AW_FONT_BYTES)
         .window(window::Settings {
             size: Size::new(1120.0, 780.0),
@@ -63,11 +63,7 @@ fn launch(boot: impl Fn() -> (app::App, Task<app::Message>) + 'static) -> iced::
             exit_on_close_request: false,
             icon,
             // Matches the desktop entry, so the taskbar shows the app's icon.
-            platform_specific: window::settings::PlatformSpecific {
-                application_id: "org.razerr_rs.App".into(),
-                ..Default::default()
-            },
-            ..iced_t3::chrome::window_settings()
+            ..iced_t3::chrome::window_settings_for("org.razerr_rs.App")
         })
         .run()
 }

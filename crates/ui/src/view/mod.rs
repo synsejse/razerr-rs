@@ -136,7 +136,7 @@ impl App {
         }
         if !self.state.connected {
             return t3::empty_state(
-                t3::icon_tile(icon::UNPLUG, 36),
+                t3::icon_tile(icon::UNPLUG, t3::TileSize::Standard),
                 "Service unavailable",
                 [
                     "Start razerr-rs-service in your desktop session.",
@@ -146,14 +146,14 @@ impl App {
         }
         if !self.state.snapshot.daemon_available {
             return t3::empty_state(
-                t3::icon_tile(icon::TRIANGLE_ALERT, 36),
+                t3::icon_tile(icon::TRIANGLE_ALERT, t3::TileSize::Standard),
                 "OpenRazer is unavailable",
                 ["Start the OpenRazer daemon, then refresh."],
             );
         }
         let Some(device) = self.state.selected() else {
             return t3::empty_state(
-                t3::icon_tile(icon::MOUSE, 36),
+                t3::icon_tile(icon::MOUSE, t3::TileSize::Standard),
                 "No supported devices connected",
                 ["Connect a Razer device, then refresh."],
             );
