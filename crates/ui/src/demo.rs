@@ -26,9 +26,11 @@ impl Demo {
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(fixture())))
     }
+
     pub fn snapshot(&self) -> Arc<Snapshot> {
         Arc::new(self.0.lock().expect("demo state").clone())
     }
+
     pub async fn send(&self, command: Command) -> Result<(), String> {
         tokio::time::sleep(WRITE).await;
         let mut snapshot = self.0.lock().expect("demo state");

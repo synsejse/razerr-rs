@@ -102,10 +102,12 @@ mod tests {
             }
         }
     }
+
     #[test]
     fn a_flat_line_stays_flat() {
         assert_eq!(slopes(&[(0.0, 3.0), (1.0, 3.0), (9.0, 3.0)]), [0.0; 3]);
     }
+
     #[test]
     fn too_few_points_for_a_slope_are_flat() {
         assert_eq!(slopes(&[]), Vec::<f32>::new());

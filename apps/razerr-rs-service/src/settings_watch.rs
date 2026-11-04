@@ -24,15 +24,19 @@ impl Watcher for WriteWatcher {
         )
         .map(Self)
     }
+
     fn watch(&mut self, path: &Path, recursive: RecursiveMode) -> notify::Result<()> {
         self.0.watch(path, recursive)
     }
+
     fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
         self.0.unwatch(path)
     }
+
     fn configure(&mut self, config: notify::Config) -> notify::Result<bool> {
         self.0.configure(config)
     }
+
     fn kind() -> WatcherKind {
         RecommendedWatcher::kind()
     }

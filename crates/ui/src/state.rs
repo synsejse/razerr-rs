@@ -44,6 +44,7 @@ impl Page {
             Self::Device => "Device",
         }
     }
+
     /// Whether `device` has anything to show on this page.
     pub fn available(self, device: &Device) -> bool {
         match self {
@@ -59,6 +60,7 @@ impl Page {
             Self::Device => true,
         }
     }
+
     /// The drafts this page edits.
     pub fn section(self) -> Option<Section> {
         match self {
@@ -147,12 +149,14 @@ impl State {
             confirm_focused: false,
         }
     }
+
     pub fn selected(&self) -> Option<&Device> {
         self.snapshot
             .devices
             .iter()
             .find(|device| Some(&device.serial) == self.selected.as_ref())
     }
+
     /// The page to show: the chosen one, or the first the selected device has.
     pub fn current_page(&self) -> Page {
         self.selected().map_or(self.page, |device| {
@@ -166,6 +170,7 @@ impl State {
             }
         })
     }
+
     pub fn controls_enabled(&self) -> bool {
         self.connected
             && self.snapshot.reliable
@@ -174,6 +179,7 @@ impl State {
                 device.availability != razerr_model::Availability::Unavailable
             })
     }
+
     pub fn receive(&mut self, snapshot: Arc<Snapshot>) {
         if self.received && snapshot.revision < self.snapshot.revision {
             return;
@@ -211,6 +217,7 @@ impl State {
             self.error.clone_from(&self.snapshot.error);
         }
     }
+
     pub fn select(&mut self, serial: Serial) {
         self.preferences = false;
         if self.selected.as_ref() == Some(&serial) {
@@ -222,6 +229,7 @@ impl State {
             self.editor.sync(&device);
         }
     }
+
     /// Discard unapplied edits in `section`, or everywhere; the pad keeps its
     /// target if it still exists.
     pub fn revert(&mut self, section: Option<Section>) {
@@ -237,15 +245,18 @@ impl State {
         }
         self.editor.select_target(target);
     }
+
     /// Hides the error, until the service reports a different one.
     pub fn dismiss_error(&mut self) {
         self.dismissed_error.clone_from(&self.snapshot.error);
         self.error = None;
     }
+
     pub fn open_confirmation(&mut self, kind: Confirmation) {
         self.confirmation = Some(kind);
         self.confirm_focused = false;
     }
+
     pub fn cancel(&mut self) {
         self.confirmation = None;
         self.confirm_focused = false;
@@ -301,6 +312,7 @@ mod tests {
         assert!(!state.editor.dpi_dirty && !state.editor.stages_dirty);
         assert_eq!(state.editor.stages, []);
     }
+
     #[test]
     fn preferences_require_valid_ranges_and_keep_draft_separate() {
         let state = State::new(Settings::default(), false);
@@ -312,6 +324,7 @@ mod tests {
         assert_eq!(draft.validated().expect("valid").history.days, 365);
         assert_eq!(state.settings.history.days, 90);
     }
+
     #[test]
     fn confirmations_start_on_cancel_and_escape_does_not_change_settings() {
         let mut state = State::new(Settings::default(), false);
@@ -321,6 +334,7 @@ mod tests {
         assert!(state.confirmation.is_none());
         assert_eq!(state.settings, Settings::default());
     }
+
     #[test]
     fn clearing_a_reported_error_allows_the_same_later_failure_to_be_shown() {
         let mut state = State::new(Settings::default(), false);

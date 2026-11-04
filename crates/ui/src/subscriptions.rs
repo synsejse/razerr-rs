@@ -25,6 +25,7 @@ impl Activations {
         Self(Arc::new(Mutex::new(receiver)))
     }
 }
+
 impl Hash for Activations {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);

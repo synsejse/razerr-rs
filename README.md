@@ -35,3 +35,5 @@ and power settings reach the device only when you press **Apply** for that page.
 **Revert** restores the reported values. Switching pages and background readings
 preserve unapplied drafts. Preferences retain their separate explicit **Save**
 action; selecting a stage with a keyboard shortcut also only changes its draft.
+
+See [shared code conventions](docs/conventions.md) for organization and formatting.

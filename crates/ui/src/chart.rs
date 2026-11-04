@@ -102,6 +102,7 @@ impl Plot {
     fn y(&self, percent: f32) -> f32 {
         TOP + self.height * (1.0 - percent / 100.0)
     }
+
     #[expect(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
@@ -116,6 +117,7 @@ impl Plot {
             self.y(point.battery.clamp(0.0, 100.0) as f32),
         )
     }
+
     /// The session's screen points, with any that share a pixel column dropped:
     /// slopes need x to increase.
     fn trace(&self, session: &[razerr_metrics::Point]) -> Vec<(f32, f32, bool)> {

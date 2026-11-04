@@ -473,6 +473,7 @@ impl Editor {
         };
         Dpi::new(x, y).map_err(|error| error.to_string())
     }
+
     pub fn stages(&self) -> Result<DpiStages, String> {
         let values = self
             .stages

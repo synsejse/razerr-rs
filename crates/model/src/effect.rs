@@ -93,6 +93,7 @@ impl Speed {
         }
         Ok(Self(value))
     }
+
     pub fn get(self) -> u8 {
         self.0
     }

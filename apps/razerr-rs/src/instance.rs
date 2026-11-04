@@ -20,6 +20,7 @@ impl Application {
         drop(platform_data);
         self.send(Activation::Present).await
     }
+
     async fn activate_action(
         &self,
         action_name: &str,

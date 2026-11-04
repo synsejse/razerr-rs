@@ -50,6 +50,7 @@ impl Percent {
         }
         Ok(Self(value))
     }
+
     pub fn get(self) -> f64 {
         self.0
     }
@@ -66,6 +67,7 @@ impl PollRate {
         }
         Ok(Self(value))
     }
+
     pub fn get(self) -> u16 {
         self.0
     }
@@ -82,6 +84,7 @@ impl IdleTime {
         }
         Ok(Self(value))
     }
+
     pub fn get(self) -> u16 {
         self.0
     }
@@ -100,6 +103,7 @@ impl LowBatteryThreshold {
         }
         Ok(Self(value))
     }
+
     pub fn get(self) -> u8 {
         self.0
     }
@@ -145,12 +149,15 @@ impl Dpi {
         }
         Ok(Self { x, y })
     }
+
     pub fn x(self) -> u16 {
         self.x
     }
+
     pub fn y(self) -> u16 {
         self.y
     }
+
     /// Whether two values mean the same setting. A single-axis device is written
     /// with Y=0 but can report its one value on both axes.
     pub fn same_setting(self, other: Self) -> bool {
@@ -214,9 +221,11 @@ impl DpiStages {
         }
         Ok(Self { active, values })
     }
+
     pub fn active(&self) -> u8 {
         self.active
     }
+
     pub fn values(&self) -> &[Dpi] {
         &self.values
     }

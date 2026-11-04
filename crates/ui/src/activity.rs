@@ -87,10 +87,12 @@ impl App {
         });
         self.next_activity
     }
+
     /// Ends the change `id`, if it's the one in flight.
     fn finish(&mut self, id: u64) -> Option<Activity> {
         self.pending.take_if(|activity| activity.id == id)
     }
+
     fn confirm(&mut self, activity: Activity) {
         self.confirmed = Some(Confirmed {
             control: activity.control,

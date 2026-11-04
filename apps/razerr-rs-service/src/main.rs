@@ -317,6 +317,7 @@ impl Stopped {
             failure: Some(failure),
         }
     }
+
     fn by_request(keep_window: bool) -> Self {
         Self {
             keep_window,

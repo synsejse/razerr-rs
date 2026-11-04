@@ -84,7 +84,8 @@ reconnection of the adapter over the `openrazer` library.
 
 ## Nix
 
-No submodules remain, so a normal GitHub input works:
+The package definition is `nix/package.nix`. No submodules remain, so a normal
+GitHub input works:
 
 ```nix
 razerr-rs = {
@@ -117,4 +118,5 @@ cargo build --release --locked
 Run `target/release/razerr-rs` from `nix-shell` so runtime libraries are
 available. `packaging/` retains desktop, D-Bus and systemd templates for future
 packaging; their `@PREFIX@` placeholders need substitution. There is currently
-no installer, Nix package or automatic service registration.
+no installer or automatic service registration; `nix/package.nix` builds the
+package for use by the host configuration.

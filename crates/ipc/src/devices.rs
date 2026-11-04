@@ -28,6 +28,7 @@ impl Devices {
             snapshots,
         }
     }
+
     fn check(&self, command: &Command) -> fdo::Result<()> {
         if let Some(serial) = command.serial() {
             let snapshot = self.snapshots.borrow();
@@ -45,6 +46,7 @@ impl Devices {
         }
         Ok(())
     }
+
     /// Replies only once the worker has finished, so a success means the device
     /// was read back, not just that the command was queued.
     async fn run(&self, command: Command) -> fdo::Result<()> {
@@ -76,6 +78,7 @@ impl Devices {
     async fn refresh(&self) -> fdo::Result<()> {
         self.run(Command::Refresh).await
     }
+
     async fn set_dpi(&self, serial: &str, x: u16, y: u16) -> fdo::Result<()> {
         self.run(Command::SetDpi {
             serial: Serial::new(serial).map_err(invalid)?,
@@ -83,6 +86,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_dpi_stages(
         &self,
         serial: &str,
@@ -100,6 +104,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_poll_rate(&self, serial: &str, rate: u16) -> fdo::Result<()> {
         self.run(Command::SetPollRate {
             serial: Serial::new(serial).map_err(invalid)?,
@@ -107,6 +112,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_idle_time(&self, serial: &str, seconds: u16) -> fdo::Result<()> {
         self.run(Command::SetIdleTime {
             serial: Serial::new(serial).map_err(invalid)?,
@@ -114,6 +120,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_low_battery(&self, serial: &str, percent: u8) -> fdo::Result<()> {
         self.run(Command::SetLowBattery {
             serial: Serial::new(serial).map_err(invalid)?,
@@ -121,6 +128,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_brightness(&self, serial: &str, zone: &str, value: f64) -> fdo::Result<()> {
         self.run(Command::SetBrightness {
             serial: Serial::new(serial).map_err(invalid)?,
@@ -129,6 +137,7 @@ impl Devices {
         })
         .await
     }
+
     async fn set_effect(&self, serial: &str, zone: &str, effect: State) -> fdo::Result<()> {
         let effect: Effect = decode(effect).map_err(invalid)?;
         self.run(Command::SetEffect {

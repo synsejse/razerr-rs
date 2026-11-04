@@ -40,18 +40,22 @@ impl Client {
             destination,
         })
     }
+
     pub fn connection(&self) -> &Connection {
         &self.connection
     }
+
     pub fn destination(&self) -> &str {
         &self.destination
     }
+
     pub async fn devices(&self) -> Result<DevicesProxy<'_>, Error> {
         Ok(DevicesProxy::builder(&self.connection)
             .destination(self.destination.as_str())
             .build()
             .await?)
     }
+
     pub async fn snapshot(&self) -> Result<Snapshot, Error> {
         let proxy = self.devices().await?;
         let snapshot: Snapshot = decode(proxy.state().await?)?;
@@ -60,6 +64,7 @@ impl Client {
             .map_err(|error| Error::Invalid(error.to_string()))?;
         Ok(snapshot)
     }
+
     /// Runs a command and returns once the service has finished it.
     pub async fn send(&self, command: Command) -> Result<(), Error> {
         let proxy = self.devices().await?;

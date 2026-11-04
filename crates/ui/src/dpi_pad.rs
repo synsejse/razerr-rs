@@ -95,12 +95,14 @@ impl Plot {
             height: (bounds.height - top - bottom).max(1.0),
         }
     }
+
     fn point(&self, fx: f32, fy: f32) -> Point {
         Point::new(
             self.left + self.width * fx,
             self.top + self.height * (1.0 - fy),
         )
     }
+
     fn fractions(&self, point: Point) -> (f32, f32) {
         (
             ((point.x - self.left) / self.width).clamp(0.0, 1.0),
@@ -121,6 +123,7 @@ impl Pad {
         }
         (dpi_at(fx, self.maximum), dpi_at(fy, self.maximum))
     }
+
     fn point_of(&self, plot: &Plot, (x, y): (u16, u16)) -> Point {
         plot.point(fraction(x, self.maximum), fraction(y, self.maximum))
     }

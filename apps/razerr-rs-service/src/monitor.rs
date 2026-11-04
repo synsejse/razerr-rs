@@ -247,6 +247,7 @@ mod tests {
         vendor: 1,
         product: 2,
     };
+
     const SECOND_USB: UsbId = UsbId {
         vendor: 1,
         product: 3,

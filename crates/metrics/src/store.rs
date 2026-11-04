@@ -44,6 +44,7 @@ impl Store {
     pub fn open_writer(path: &Path) -> Result<Self, Error> {
         Self::open(path, true)
     }
+
     pub fn open_reader(path: &Path) -> Result<Self, Error> {
         Self::open(path, false)
     }

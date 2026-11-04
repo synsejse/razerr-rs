@@ -313,6 +313,7 @@ mod tests {
             Vec::<Command>::new()
         );
     }
+
     #[test]
     fn polling_drafts_survive_snapshots_and_revert_without_a_write() {
         let mut state = wired();

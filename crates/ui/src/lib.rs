@@ -20,6 +20,8 @@ use iced::{Size, Task, window};
 use razerr_storage::{Paths, Settings};
 use tokio::sync::mpsc;
 
+const APPLICATION_ID: &str = "org.razerr_rs.App";
+
 /// Startup state, resolved before the window takes ownership of the main thread.
 #[derive(Clone)]
 pub struct Options {
@@ -55,7 +57,7 @@ fn launch(boot: impl Fn() -> (app::App, Task<app::Message>) + 'static) -> iced::
         .title("razerr-rs")
         .theme(|_: &app::App| iced_t3::theme())
         .subscription(app::App::subscription)
-        .settings(iced_t3::settings_for("org.razerr_rs.App"))
+        .settings(iced_t3::settings_for(APPLICATION_ID))
         .font(iced_aw::ICED_AW_FONT_BYTES)
         .window(window::Settings {
             size: Size::new(1120.0, 780.0),
@@ -63,7 +65,7 @@ fn launch(boot: impl Fn() -> (app::App, Task<app::Message>) + 'static) -> iced::
             exit_on_close_request: false,
             icon,
             // Matches the desktop entry, so the taskbar shows the app's icon.
-            ..iced_t3::chrome::window_settings_for("org.razerr_rs.App")
+            ..iced_t3::chrome::window_settings_for(APPLICATION_ID)
         })
         .run()
 }

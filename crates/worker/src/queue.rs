@@ -23,6 +23,7 @@ impl Request {
             receiver,
         )
     }
+
     pub(crate) fn finish(self, result: &Result<(), String>) {
         for sender in self.waiting {
             let _ = sender.send(result.clone());
@@ -57,6 +58,7 @@ impl Pending {
         }
         self.requests.insert(key, request);
     }
+
     pub fn pop(&mut self) -> Option<Request> {
         self.requests
             .shift_remove_index(0)

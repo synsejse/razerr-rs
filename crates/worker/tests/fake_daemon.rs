@@ -69,26 +69,32 @@ impl Misc {
     fn usb(&self) -> Vec<i32> {
         vec![0x1532, 0x00c2]
     }
+
     #[zbus(name = "getDeviceName")]
     fn name(&self) -> String {
         "Fake Mouse".into()
     }
+
     #[zbus(name = "getDeviceType")]
     fn kind(&self) -> String {
         "mouse".into()
     }
+
     #[zbus(name = "getFirmware")]
     fn firmware(&self) -> String {
         "v1.0".into()
     }
+
     #[zbus(name = "getDriverVersion")]
     fn driver(&self) -> String {
         "3.0".into()
     }
+
     #[zbus(name = "getPollRate")]
     fn rate(&self) -> i32 {
         self.0.lock().expect("device").rate()
     }
+
     #[zbus(name = "setPollRate")]
     fn set_rate(&self, rate: u16) {
         let mut device = self.0.lock().expect("device");
@@ -104,6 +110,7 @@ impl DpiInterface {
     fn dpi(&self) -> Vec<i32> {
         vec![800, 800]
     }
+
     #[zbus(name = "setDPI")]
     fn set_dpi(&self, x: u16, y: u16) -> fdo::Result<()> {
         assert!(x > 0 && y > 0);
@@ -114,6 +121,7 @@ impl DpiInterface {
         }
         Ok(())
     }
+
     #[zbus(name = "maxDPI")]
     fn maximum(&self) -> i32 {
         30000

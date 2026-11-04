@@ -45,24 +45,30 @@ impl Control {
     async fn open(&self) -> zbus::fdo::Result<()> {
         self.request(Action::Open).await
     }
+
     async fn settings(&self) -> zbus::fdo::Result<()> {
         self.request(Action::Settings).await
     }
+
     async fn clear_history(&self) -> zbus::fdo::Result<()> {
         self.request(Action::ClearHistory).await
     }
+
     async fn stop(&self) -> zbus::fdo::Result<()> {
         self.request(Action::Stop).await
     }
+
     async fn quit(&self) -> zbus::fdo::Result<()> {
         self.request(Action::Quit).await
     }
+
     async fn refresh(&self) -> zbus::fdo::Result<()> {
         self.commands
             .send(Command::Refresh.into())
             .await
             .map_err(|_| zbus::fdo::Error::Failed("device worker is shutting down".into()))
     }
+
     fn status(&self) -> zbus::fdo::Result<String> {
         serde_json::to_string_pretty(self.snapshots.borrow().as_ref())
             .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))
