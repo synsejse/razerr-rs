@@ -282,7 +282,7 @@ impl Editor {
 
     pub fn set_linked(&mut self, linked: bool) -> Result<(), String> {
         self.linked = linked;
-        if linked {
+        if linked && self.target_values().is_some_and(|(x, y)| x != y) {
             let (x, y) = self.target_mut()?;
             y.clone_from(x);
         }
@@ -354,7 +354,8 @@ impl Editor {
             .as_ref()
             .and_then(|control| control.current.fresh())
             .is_some_and(|actual| {
-                self.dpi(device.capabilities.available_dpi).as_ref() == Ok(actual)
+                self.dpi(device.capabilities.available_dpi)
+                    .is_ok_and(|draft| draft.same_setting(*actual))
             })
         {
             self.dpi_dirty = false;
@@ -705,6 +706,15 @@ fn retain_selection<'a>(
 mod tests {
     use super::*;
 
+    fn wired_snapshot() -> Snapshot {
+        serde_json::from_str(include_str!("../tests/captures/wired.json"))
+            .expect("actual wired snapshot")
+    }
+
+    fn wired_device() -> Device {
+        wired_snapshot().devices.remove(0)
+    }
+
     #[test]
     fn real_transport_handoff_discards_old_drafts_when_new_stages_are_unavailable() {
         let wired: Snapshot = serde_json::from_str(include_str!("../tests/captures/wired.json"))
@@ -871,6 +881,51 @@ mod tests {
         editor.set_axis(Axis::X, "2000".into()).expect("current");
         assert_eq!((editor.x.as_str(), editor.y.as_str()), ("2000", "2000"));
         assert!(editor.dpi_dirty);
+    }
+
+    #[test]
+    fn relinking_equal_axes_is_not_an_edit() {
+        let mut editor = Editor {
+            x: "800".into(),
+            y: "800".into(),
+            stages: vec![("400".into(), "400".into())],
+            active: 1,
+            ..Editor::default()
+        };
+        editor.set_linked(false).expect("current");
+        editor.set_linked(true).expect("current");
+        assert!(!editor.dirty(Section::Sensitivity));
+        editor.select_target(Target::Stage(0));
+        editor.set_linked(false).expect("stage");
+        editor.set_linked(true).expect("stage");
+        assert!(!editor.dirty(Section::Sensitivity));
+        // Unequal axes do change: Y follows X.
+        editor.select_target(Target::Current);
+        editor.linked = false;
+        editor.y = "900".into();
+        editor.set_linked(true).expect("current");
+        assert_eq!(editor.y, "800");
+        assert!(editor.dpi_dirty);
+    }
+
+    #[test]
+    fn single_axis_dpi_is_clean_once_the_device_reports_it() {
+        let mut device = wired_device();
+        device.capabilities.available_dpi = true;
+        device.dpi = Some(razerr_model::DpiControl {
+            current: razerr_model::Reading::Fresh(Dpi::new(900, 900).expect("DPI")),
+            range: razerr_model::DpiRange::Discrete {
+                values: razerr_model::Reading::Fresh(vec![450, 900]),
+            },
+        });
+        let mut editor = Editor {
+            x: "900".into(),
+            y: "900".into(),
+            dpi_dirty: true,
+            ..Editor::default()
+        };
+        editor.sync(&device);
+        assert!(!editor.dpi_dirty);
     }
 
     #[test]
