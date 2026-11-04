@@ -231,8 +231,9 @@ impl App {
                 return self.load_history();
             }
             Message::Preferences => {
+                // The draft follows saved settings itself, so leaving the page and
+                // coming back keeps unsaved edits.
                 self.state.preferences = true;
-                self.state.draft = self.state.settings.clone().into();
                 self.state.saved = false;
                 let paths = self.options.paths.clone();
                 return Task::batch([
@@ -544,7 +545,9 @@ impl App {
         if self.state.confirmation.is_some() {
             return Task::none();
         }
-        if modifiers.command() && key.as_ref() == Key::Character("r") {
+        if modifiers.command()
+            && matches!(key.as_ref(), Key::Character(key) if key.eq_ignore_ascii_case("r"))
+        {
             return self.update(Message::Refresh);
         }
         if modifiers.command() && key.as_ref() == Key::Character(",") {
@@ -566,4 +569,52 @@ fn app_icon() -> image::Handle {
         |_| image::Handle::from_rgba(1, 1, vec![0; 4]),
         |icon| image::Handle::from_rgba(icon.width, icon.height, icon.pixels),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        let root = std::env::temp_dir().join("razerr-rs-ui-tests");
+        let paths = razerr_storage::Paths::from_roots(
+            root.join("config"),
+            root.join("state"),
+            root.join("cache"),
+        )
+        .expect("absolute paths");
+        let (_, receiver) = tokio::sync::mpsc::channel(1);
+        App::new(
+            Options {
+                paths,
+                settings: Settings::default(),
+                dark_override: false,
+                show_settings: false,
+                initial_error: None,
+            },
+            Activations::new(receiver),
+        )
+        .0
+    }
+
+    #[test]
+    fn opening_preferences_again_keeps_unsaved_edits() {
+        let mut app = app();
+        let _ = app.update(Message::Preferences);
+        let _ = app.update(Message::Preference(Preference::Days("30".into())));
+        let _ = app.update(Message::Preferences);
+        assert_eq!(app.state.draft.days, "30");
+        let _ = app.update(Message::Back);
+        let _ = app.update(Message::Preferences);
+        assert_eq!(app.state.draft.days, "30");
+    }
+
+    #[test]
+    fn refresh_shortcut_works_with_caps_lock() {
+        let mut app = app();
+        app.state.editor.x = "2000".into();
+        let key = keyboard::Key::Character("R".into());
+        let _ = app.key(&key, keyboard::Modifiers::CTRL);
+        assert_eq!(app.state.editor.x, "", "Ctrl+R reset the drafts");
+    }
 }

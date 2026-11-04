@@ -651,8 +651,11 @@ impl State {
         }
     }
     pub fn select(&mut self, serial: Serial) {
-        self.selected = Some(serial);
         self.preferences = false;
+        if self.selected.as_ref() == Some(&serial) {
+            return;
+        }
+        self.selected = Some(serial);
         self.editor = Editor::default();
         if let Some(device) = self.selected().cloned() {
             self.editor.sync(&device);
@@ -926,6 +929,20 @@ mod tests {
         };
         editor.sync(&device);
         assert!(!editor.dpi_dirty);
+    }
+
+    #[test]
+    fn selecting_the_selected_device_keeps_its_drafts() {
+        let mut state = State::new(Settings::default(), false, false);
+        state.receive(Arc::new(wired_snapshot()));
+        state.editor.x = "2000".into();
+        state.editor.dpi_dirty = true;
+        state.preferences = true;
+        let serial = state.selected.clone().expect("selected");
+        state.select(serial);
+        assert_eq!(state.editor.x, "2000");
+        assert!(state.editor.dpi_dirty);
+        assert!(!state.preferences);
     }
 
     #[test]
