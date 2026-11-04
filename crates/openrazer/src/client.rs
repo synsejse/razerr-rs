@@ -7,7 +7,10 @@ use razerr_model::{
 };
 use serde::Serialize;
 use thiserror::Error;
-use zbus::{Connection, wire::DynamicDeserialize};
+use zbus::{
+    Connection,
+    wire::{DynamicDeserialize, DynamicType},
+};
 
 use crate::{
     caps::Introspection,
@@ -61,24 +64,35 @@ impl Client {
         Ok(Self { connection })
     }
 
-    pub(crate) async fn get<T>(&self, path: &str, interface: &str, method: &str) -> Result<T, Error>
-    where
-        T: for<'de> DynamicDeserialize<'de>,
-    {
+    /// A method call that can't outlast [`CALL_TIMEOUT`].
+    pub(crate) async fn call<B: Serialize + DynamicType>(
+        &self,
+        path: &str,
+        interface: &str,
+        method: &str,
+        body: &B,
+    ) -> Result<zbus::Message, Error> {
         let operation = format!("{interface}.{method}");
-        let reply = tokio::time::timeout(
+        tokio::time::timeout(
             CALL_TIMEOUT,
             self.connection
-                .call_method(Some(DESTINATION), path, Some(interface), method, &()),
+                .call_method(Some(DESTINATION), path, Some(interface), method, body),
         )
         .await
         .map_err(|_| Error::Timeout(operation.clone()))?
         .map_err(|error| Error::Call {
-            operation: operation.clone(),
-            detail: error.to_string(),
-        })?;
-        reply.body().deserialize().map_err(|error| Error::Call {
             operation,
+            detail: error.to_string(),
+        })
+    }
+
+    pub(crate) async fn get<T>(&self, path: &str, interface: &str, method: &str) -> Result<T, Error>
+    where
+        T: for<'de> DynamicDeserialize<'de>,
+    {
+        let reply = self.call(path, interface, method, &()).await?;
+        reply.body().deserialize().map_err(|error| Error::Call {
+            operation: format!("{interface}.{method}"),
             detail: error.to_string(),
         })
     }
@@ -131,11 +145,13 @@ impl Client {
                 }
             };
             let reader = Reader {
-                client: self,
-                path,
-                serial: serial.clone(),
+                reads: Reads {
+                    client: self,
+                    path: &path,
+                    serial: &serial,
+                    warnings: &mut report.warnings,
+                },
                 introspection,
-                warnings: &mut report.warnings,
             };
             report.devices.push(reader.device().await);
         }
@@ -168,11 +184,11 @@ impl Client {
             let path = format!("/org/razer/device/{}", known.serial);
             let mut device = known.clone();
             // The reader uses only get/checked helpers here, not introspection.
-            let mut reader = LiveReader {
+            let mut reader = Reads {
                 client: self,
                 path: &path,
-                warnings: &mut report.warnings,
                 serial: &known.serial,
+                warnings: &mut report.warnings,
             };
             // A serial can survive a wired/wireless handoff. Recheck transport
             // even if a hotplug signal was missed, before accepting observations.
@@ -256,29 +272,25 @@ impl Client {
     }
 }
 
-struct LiveReader<'a> {
+/// Reads of one device. A failed read becomes a warning, never a made-up value.
+struct Reads<'a> {
     client: &'a Client,
     path: &'a str,
     serial: &'a Serial,
     warnings: &'a mut Vec<ReadWarning>,
 }
 
-impl LiveReader<'_> {
-    fn warn(&mut self, operation: &str, error: impl std::fmt::Display) {
+impl Reads<'_> {
+    fn push_warning(&mut self, operation: &str, error: impl std::fmt::Display, transient: bool) {
         self.warnings.push(ReadWarning {
             serial: self.serial.to_string(),
             operation: operation.into(),
             message: error.to_string(),
-            transient: false,
+            transient,
         });
     }
-    fn warn_io(&mut self, operation: &str, error: impl std::fmt::Display) {
-        self.warnings.push(ReadWarning {
-            serial: self.serial.to_string(),
-            operation: operation.into(),
-            message: error.to_string(),
-            transient: true,
-        });
+    fn warn(&mut self, operation: &str, error: impl std::fmt::Display) {
+        self.push_warning(operation, error, false);
     }
     async fn get<T: for<'de> DynamicDeserialize<'de>>(
         &mut self,
@@ -288,7 +300,7 @@ impl LiveReader<'_> {
         match self.client.get(self.path, interface, method).await {
             Ok(value) => Some(value),
             Err(error) => {
-                self.warn_io(method, error);
+                self.push_warning(method, error, true);
                 None
             }
         }
@@ -307,66 +319,6 @@ impl LiveReader<'_> {
             None => Reading::Unavailable,
         }
     }
-}
-
-pub async fn probe() -> Result<ProbeReport, Error> {
-    Client::connect().await?.probe().await
-}
-
-struct Reader<'a> {
-    client: &'a Client,
-    path: String,
-    serial: Serial,
-    introspection: Introspection,
-    warnings: &'a mut Vec<ReadWarning>,
-}
-
-impl Reader<'_> {
-    fn warn(&mut self, operation: &str, error: impl std::fmt::Display) {
-        self.warnings.push(ReadWarning {
-            serial: self.serial.to_string(),
-            operation: operation.into(),
-            message: error.to_string(),
-            transient: false,
-        });
-    }
-
-    fn warn_io(&mut self, operation: &str, error: impl std::fmt::Display) {
-        self.warnings.push(ReadWarning {
-            serial: self.serial.to_string(),
-            operation: operation.into(),
-            message: error.to_string(),
-            transient: true,
-        });
-    }
-    async fn get<T>(&mut self, interface: &str, method: &str) -> Option<T>
-    where
-        T: for<'de> DynamicDeserialize<'de>,
-    {
-        match self.client.get(&self.path, interface, method).await {
-            Ok(value) => Some(value),
-            Err(error) => {
-                self.warn_io(method, error);
-                None
-            }
-        }
-    }
-
-    fn validated<T>(
-        &mut self,
-        operation: &str,
-        value: Option<Result<T, ValidationError>>,
-    ) -> Reading<T> {
-        match value {
-            Some(Ok(value)) => Reading::Fresh(value),
-            Some(Err(error)) => {
-                self.warn(operation, error);
-                Reading::Unavailable
-            }
-            None => Reading::Unavailable,
-        }
-    }
-
     async fn checked<T, U>(
         &mut self,
         interface: &str,
@@ -377,15 +329,27 @@ impl Reader<'_> {
         T: for<'de> DynamicDeserialize<'de>,
     {
         let value = self.get(interface, method).await.map(validate);
-        self.validated(method, value)
+        self.validate(method, value)
     }
+}
 
+pub async fn probe() -> Result<ProbeReport, Error> {
+    Client::connect().await?.probe().await
+}
+
+/// A full read of a device, guided by what it advertises.
+struct Reader<'a> {
+    reads: Reads<'a>,
+    introspection: Introspection,
+}
+
+impl Reader<'_> {
     async fn image(&mut self) -> Option<String> {
         if self
             .introspection
             .has_method(MISC, "getDeviceImage", "", "s")
         {
-            let image: Option<String> = self.get(MISC, "getDeviceImage").await;
+            let image: Option<String> = self.reads.get(MISC, "getDeviceImage").await;
             if let Some(image) = image.filter(|image| !image.is_empty()) {
                 return Some(image);
             }
@@ -393,7 +357,7 @@ impl Reader<'_> {
         if !self.introspection.has_method(MISC, "getRazerUrls", "", "s") {
             return None;
         }
-        let legacy: String = self.get(MISC, "getRazerUrls").await?;
+        let legacy: String = self.reads.get(MISC, "getRazerUrls").await?;
         match serde_json::from_str::<serde_json::Value>(&legacy) {
             Ok(value) => value
                 .get("top_img")
@@ -401,7 +365,7 @@ impl Reader<'_> {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned),
             Err(error) => {
-                self.warn("getRazerUrls", error);
+                self.reads.warn("getRazerUrls", error);
                 None
             }
         }
@@ -409,12 +373,13 @@ impl Reader<'_> {
 
     async fn device(mut self) -> Device {
         let capabilities = self.introspection.capabilities();
-        let name = self.get(MISC, "getDeviceName").await;
-        let kind = self.get(MISC, "getDeviceType").await;
-        let firmware = self.get(MISC, "getFirmware").await;
-        let driver = self.get(MISC, "getDriverVersion").await;
+        let name = self.reads.get(MISC, "getDeviceName").await;
+        let kind = self.reads.get(MISC, "getDeviceType").await;
+        let firmware = self.reads.get(MISC, "getFirmware").await;
+        let driver = self.reads.get(MISC, "getDriverVersion").await;
         let image = self.image().await;
         let usb = self
+            .reads
             .checked(MISC, "getVidPid", |values: Vec<i32>| {
                 interpret::usb_id(&values)
             })
@@ -429,10 +394,11 @@ impl Reader<'_> {
         let stages = if capabilities.dpi_stages {
             // One struct output: the outer one-tuple is the D-Bus argument list.
             Some(
-                self.checked(DPI, "getDPIStages", |(value,): ((u8, Vec<(u16, u16)>),)| {
-                    interpret::stages(value)
-                })
-                .await,
+                self.reads
+                    .checked(DPI, "getDPIStages", |(value,): ((u8, Vec<(u16, u16)>),)| {
+                        interpret::stages(value)
+                    })
+                    .await,
             )
         } else {
             None
@@ -443,40 +409,23 @@ impl Reader<'_> {
             None
         };
         let battery = if capabilities.battery {
-            if availability == Availability::Unavailable {
-                Some(Battery {
-                    level: Reading::Unavailable,
-                    charging: None,
-                })
-            } else {
-                let level = self.get(POWER, "getBattery").await;
-                let charging = if capabilities.charging {
-                    self.get(POWER, "isCharging").await
-                } else {
-                    None
-                };
-                Some(match interpret::battery(level, charging) {
-                    Ok(battery) => battery,
-                    Err(error) => {
-                        self.warn("getBattery", error);
-                        Battery {
-                            level: Reading::Unavailable,
-                            charging: None,
-                        }
-                    }
-                })
-            }
+            Some(self.battery(capabilities.charging, availability).await)
         } else {
             None
         };
         let idle_time = if capabilities.idle_time {
-            Some(self.checked(POWER, "getIdleTime", IdleTime::new).await)
+            Some(
+                self.reads
+                    .checked(POWER, "getIdleTime", IdleTime::new)
+                    .await,
+            )
         } else {
             None
         };
         let low_battery = if capabilities.low_battery_threshold {
             Some(
-                self.checked(POWER, "getLowBatteryThreshold", LowBatteryThreshold::new)
+                self.reads
+                    .checked(POWER, "getLowBatteryThreshold", LowBatteryThreshold::new)
                     .await,
             )
         } else {
@@ -484,7 +433,7 @@ impl Reader<'_> {
         };
         let zones = self.zones(&capabilities.zones).await;
         Device {
-            serial: self.serial,
+            serial: self.reads.serial.clone(),
             name,
             kind,
             firmware,
@@ -503,13 +452,36 @@ impl Reader<'_> {
         }
     }
 
+    async fn battery(&mut self, reports_charging: bool, availability: Availability) -> Battery {
+        let unavailable = Battery {
+            level: Reading::Unavailable,
+            charging: None,
+        };
+        if availability == Availability::Unavailable {
+            return unavailable;
+        }
+        let level = self.reads.get(POWER, "getBattery").await;
+        let charging = if reports_charging {
+            self.reads.get(POWER, "isCharging").await
+        } else {
+            None
+        };
+        interpret::battery(level, charging).unwrap_or_else(|error| {
+            self.reads.warn("getBattery", error);
+            unavailable
+        })
+    }
+
     async fn dpi(&mut self, discrete: bool) -> (DpiControl, Availability) {
-        let values: Option<Vec<i32>> = self.get(DPI, "getDPI").await;
+        let values: Option<Vec<i32>> = self.reads.get(DPI, "getDPI").await;
         let availability = interpret::availability(Availability::Unknown, values.as_deref());
-        let current = self.validated("getDPI", values.map(|values| interpret::dpi(&values)));
+        let current = self
+            .reads
+            .validate("getDPI", values.map(|values| interpret::dpi(&values)));
         let range = if discrete {
             DpiRange::Discrete {
                 values: self
+                    .reads
                     .checked(DPI, "availableDPI", |values: Vec<i32>| {
                         interpret::dpi_values(&values)
                     })
@@ -517,7 +489,9 @@ impl Reader<'_> {
             }
         } else {
             let maximum = if self.introspection.has_method(DPI, "maxDPI", "", "i") {
-                self.checked(DPI, "maxDPI", interpret::positive_u16).await
+                self.reads
+                    .checked(DPI, "maxDPI", interpret::positive_u16)
+                    .await
             } else {
                 Reading::Unavailable
             };
@@ -528,18 +502,20 @@ impl Reader<'_> {
 
     async fn polling(&mut self, advertised_rates: bool) -> Polling {
         let current = self
+            .reads
             .checked(MISC, "getPollRate", |rate| {
                 PollRate::new(interpret::positive_u16(rate)?)
             })
             .await;
         let supported = if advertised_rates {
-            self.checked(MISC, "getSupportedPollRates", |values: Vec<u16>| {
-                interpret::poll_rates(&values)
-            })
-            .await
-            .displayed()
-            .cloned()
-            .unwrap_or_default()
+            self.reads
+                .checked(MISC, "getSupportedPollRates", |values: Vec<u16>| {
+                    interpret::poll_rates(&values)
+                })
+                .await
+                .displayed()
+                .cloned()
+                .unwrap_or_default()
         } else {
             interpret::legacy_poll_rates()
         };
@@ -552,12 +528,13 @@ impl Reader<'_> {
             let prefix = protocol::zone_prefix(zone.id);
             let brightness = if zone.brightness {
                 Some(
-                    self.checked(
-                        protocol::brightness_interface(zone.id),
-                        &format!("get{prefix}Brightness"),
-                        Percent::new,
-                    )
-                    .await,
+                    self.reads
+                        .checked(
+                            protocol::brightness_interface(zone.id),
+                            &format!("get{prefix}Brightness"),
+                            Percent::new,
+                        )
+                        .await,
                 )
             } else {
                 None
@@ -579,7 +556,7 @@ impl Reader<'_> {
         let interface = protocol::zone_interface(zone.id);
         let prefix = protocol::zone_prefix(zone.id);
         let method = format!("get{prefix}Effect");
-        let Some(name): Option<String> = self.get(interface, &method).await else {
+        let Some(name): Option<String> = self.reads.get(interface, &method).await else {
             return Reading::Unavailable;
         };
         let Some(kind) = zone
@@ -588,7 +565,8 @@ impl Reader<'_> {
             .copied()
             .find(|&kind| protocol::effect_suffix(kind).eq_ignore_ascii_case(&name))
         else {
-            self.warn(&method, format!("unsupported remembered effect {name:?}"));
+            self.reads
+                .warn(&method, format!("unsupported remembered effect {name:?}"));
             return Reading::Unavailable;
         };
         let colors: Vec<u8> = if kind.color_count() > 0 {
@@ -596,6 +574,7 @@ impl Reader<'_> {
                 return Reading::Unavailable;
             }
             let Some(colors) = self
+                .reads
                 .get(interface, &format!("get{prefix}EffectColors"))
                 .await
             else {
@@ -609,7 +588,8 @@ impl Reader<'_> {
             if !zone.effect_speed {
                 return Reading::Unavailable;
             }
-            self.get(interface, &format!("get{prefix}EffectSpeed"))
+            self.reads
+                .get(interface, &format!("get{prefix}EffectSpeed"))
                 .await
         } else {
             None
@@ -618,11 +598,13 @@ impl Reader<'_> {
             if !zone.wave_direction {
                 return Reading::Unavailable;
             }
-            self.get(interface, &format!("get{prefix}WaveDir")).await
+            self.reads
+                .get(interface, &format!("get{prefix}WaveDir"))
+                .await
         } else {
             None
         };
-        self.validated(
+        self.reads.validate(
             &method,
             Some(interpret::effect(kind, &colors, speed, direction)),
         )

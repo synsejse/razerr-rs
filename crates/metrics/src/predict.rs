@@ -1,7 +1,7 @@
 //! Empirical prediction rules ported from Chromaven's numeric test vectors.
 //! Missing evidence yields `None`, never a fabricated default rate.
 
-#![allow(
+#![expect(
     clippy::float_cmp,
     reason = "Exact 100% is the protocol's full-battery endpoint"
 )]

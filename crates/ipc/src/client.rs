@@ -7,7 +7,7 @@ use crate::{DevicesProxy, Error, decode, encode};
 /// to a slow device can take 10 seconds, and several happen per write.
 const METHOD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Client {
     connection: Connection,
     destination: String,

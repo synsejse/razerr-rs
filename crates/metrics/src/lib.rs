@@ -8,7 +8,10 @@ pub mod predict;
 mod schema;
 mod store;
 
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use razerr_model::{Percent, Serial, UsbId};
 use serde::Serialize;
@@ -43,6 +46,15 @@ pub struct Point {
 pub struct Usage {
     pub samples: u64,
     pub bytes: u64,
+}
+
+/// Seconds since the Unix epoch, as history timestamps count them.
+pub fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|value| i64::try_from(value.as_secs()).ok())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, thiserror::Error)]

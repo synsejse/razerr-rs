@@ -7,7 +7,7 @@
 //!
 //! This must never meet a real daemon, so it stops unless it owns `org.razer` on
 //! a bus that isn't the desktop session's.
-#![allow(
+#![expect(
     clippy::unused_self,
     reason = "D-Bus methods take self whether or not the fake uses it"
 )]

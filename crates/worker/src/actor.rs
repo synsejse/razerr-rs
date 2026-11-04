@@ -124,14 +124,26 @@ impl Actor {
         let Some(client) = &self.client else {
             return;
         };
-        let serials = match client.serials().await {
-            Ok(serials) => serials,
-            Err(error) => {
-                self.fail(error.to_string());
-                return;
+        match self.read(client, full).await {
+            // Discard a read spanning an ownership change, including a fast restart.
+            Ok((report, full)) => {
+                if !self.sync_owner() {
+                    self.apply(report, full);
+                }
             }
-        };
-        let mut full = full
+            Err(error) => self.fail(error.to_string()),
+        }
+    }
+
+    /// Reads every device, and says whether that became a full read: new devices
+    /// and changed transports need discovery, whatever was asked for.
+    async fn read(
+        &self,
+        client: &Client,
+        mut full: bool,
+    ) -> Result<(ProbeReport, bool), razerr_openrazer::Error> {
+        let serials = client.serials().await?;
+        full = full
             || !self.state.reliable
             || serials.len() != self.state.devices.len()
             || serials.iter().any(|serial| {
@@ -142,13 +154,7 @@ impl Actor {
                     .any(|device| &device.serial == serial)
             });
         let mut report = if full {
-            match client.probe().await {
-                Ok(report) => report,
-                Err(error) => {
-                    self.fail(error.to_string());
-                    return;
-                }
-            }
+            client.probe().await?
         } else {
             client.live(&self.state.devices).await
         };
@@ -163,13 +169,7 @@ impl Actor {
                     })
             })
         {
-            report = match client.probe().await {
-                Ok(report) => report,
-                Err(error) => {
-                    self.fail(error.to_string());
-                    return;
-                }
-            };
+            report = client.probe().await?;
             full = true;
         }
         // Firmware can briefly return invalid stage data or fail a power read
@@ -181,22 +181,13 @@ impl Actor {
             tokio::time::sleep(Duration::from_millis(150)).await;
             if self.owner_generation.load(Ordering::Acquire) == self.seen_owner {
                 report = if full {
-                    match client.probe().await {
-                        Ok(report) => report,
-                        Err(error) => {
-                            self.fail(error.to_string());
-                            return;
-                        }
-                    }
+                    client.probe().await?
                 } else {
                     client.live(&self.state.devices).await
                 };
             }
         }
-        // Discard a read spanning an ownership change, including a fast restart.
-        if !self.sync_owner() {
-            self.apply(report, full);
-        }
+        Ok((report, full))
     }
 
     fn apply(&mut self, mut report: ProbeReport, full: bool) {
@@ -278,6 +269,30 @@ impl Actor {
         } else {
             SnapshotKind::Live
         });
+    }
+
+    /// Works through everything queued, including what arrives meanwhile. Repeated
+    /// requests for one setting coalesce while they wait.
+    async fn run_requests(
+        &mut self,
+        pending: &mut Pending,
+        commands: &mut mpsc::Receiver<Request>,
+    ) {
+        let take_queued = |pending: &mut Pending, commands: &mut mpsc::Receiver<Request>| {
+            while let Ok(request) = commands.try_recv() {
+                pending.push(request);
+            }
+        };
+        take_queued(pending, commands);
+        while let Some(request) = pending.pop() {
+            let result = if matches!(request.command, Command::Refresh) {
+                self.full_refresh().await
+            } else {
+                self.execute(&request.command).await
+            };
+            request.finish(&result);
+            take_queued(pending, commands);
+        }
     }
 
     /// A refresh that reached the daemon succeeded, even if some readings failed;
@@ -514,20 +529,11 @@ async fn run(
     let mut deadline = Instant::now();
     loop {
         tokio::select! {
-            command = commands.recv() => {
-                let Some(command) = command else { break; };
-                pending.push(command);
+            request = commands.recv() => {
+                let Some(request) = request else { break };
+                pending.push(request);
                 tokio::task::yield_now().await;
-                while let Ok(command) = commands.try_recv() { pending.push(command); }
-                while let Some(request) = pending.pop() {
-                    let result = if matches!(request.command, Command::Refresh) {
-                        actor.full_refresh().await
-                    } else {
-                        actor.execute(&request.command).await
-                    };
-                    request.finish(&result);
-                    while let Ok(command) = commands.try_recv() { pending.push(command); }
-                }
+                actor.run_requests(&mut pending, &mut commands).await;
                 deadline = Instant::now() + retries.next(&actor.state);
             }
             Some(()) = signals.recv() => {

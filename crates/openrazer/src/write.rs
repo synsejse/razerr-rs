@@ -1,12 +1,10 @@
-use std::time::Duration;
-
 use razerr_model::{Command, Device, Direction, Effect, ZoneId};
 use serde::Serialize;
 use zbus::wire::DynamicType;
 
 use crate::{
     Client, Error,
-    protocol::{self, DESTINATION, DPI, MISC, POWER},
+    protocol::{self, DPI, MISC, POWER},
 };
 
 impl Client {
@@ -153,18 +151,6 @@ impl Client {
         method: &str,
         body: &B,
     ) -> Result<(), Error> {
-        let operation = format!("{interface}.{method}");
-        tokio::time::timeout(
-            Duration::from_secs(10),
-            self.connection
-                .call_method(Some(DESTINATION), path, Some(interface), method, body),
-        )
-        .await
-        .map_err(|_| Error::Timeout(operation.clone()))?
-        .map_err(|error| Error::Call {
-            operation,
-            detail: error.to_string(),
-        })?;
-        Ok(())
+        self.call(path, interface, method, body).await.map(drop)
     }
 }

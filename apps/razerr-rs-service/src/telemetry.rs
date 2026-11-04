@@ -4,10 +4,10 @@ use std::{
     collections::HashSet,
     sync::{Arc, mpsc},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
-use razerr_metrics::{Sample, Store};
+use razerr_metrics::{Sample, Store, unix_now};
 use razerr_model::{Availability, Snapshot, SnapshotKind};
 use razerr_storage::{Paths, Settings};
 use tokio::sync::oneshot;
@@ -37,32 +37,25 @@ impl Telemetry {
         Ok(Self { sender, task })
     }
 
-    pub fn configure(&self, settings: &Settings) {
-        if self
-            .sender
-            .send(Request::Configure(settings.clone()))
-            .is_err()
-        {
+    fn send(&self, request: Request) {
+        if self.sender.send(request).is_err() {
             tracing::error!("history thread stopped");
         }
+    }
+
+    pub fn configure(&self, settings: &Settings) {
+        self.send(Request::Configure(settings.clone()));
     }
 
     pub fn observe(&self, snapshot: Arc<Snapshot>, monotonic: Duration) {
         if snapshot.kind == SnapshotKind::Ack {
             return;
         }
-        let timestamp = wall_time();
-        if self
-            .sender
-            .send(Request::Observe {
-                snapshot,
-                timestamp,
-                monotonic,
-            })
-            .is_err()
-        {
-            tracing::error!("history thread stopped");
-        }
+        self.send(Request::Observe {
+            snapshot,
+            timestamp: unix_now(),
+            monotonic,
+        });
     }
 
     pub async fn clear(&self) -> Result<(), String> {
@@ -81,14 +74,6 @@ impl Telemetry {
             tracing::error!(%error, "joining history thread failed");
         }
     }
-}
-
-fn wall_time() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|value| i64::try_from(value.as_secs()).ok())
-        .unwrap_or(0)
 }
 
 struct Writer {
@@ -136,6 +121,14 @@ impl Writer {
             .ok_or_else(|| "history failed to open".to_owned())
     }
 
+    /// The next sample of every device starts a new session.
+    fn break_sessions(&mut self) {
+        if let Some(store) = &mut self.store {
+            store.gap(None);
+        }
+        self.serials.clear();
+    }
+
     fn run(mut self, receiver: mpsc::Receiver<Request>) {
         for request in receiver {
             let result = match request {
@@ -161,10 +154,7 @@ impl Writer {
                     if result.is_err() {
                         // Even a busy database must not bridge an observation
                         // that could not be recorded or fully processed.
-                        if let Some(store) = &mut self.store {
-                            store.gap(None);
-                        }
-                        self.serials.clear();
+                        self.break_sessions();
                     }
                     result
                 }
@@ -183,10 +173,7 @@ impl Writer {
 
     fn configure(&mut self, settings: Settings) -> Result<(), String> {
         if settings.history != self.settings.history {
-            if let Some(store) = &mut self.store {
-                store.gap(None);
-            }
-            self.serials.clear();
+            self.break_sessions();
             self.retry_after = Duration::ZERO;
             self.last_prune = None;
         }
@@ -219,14 +206,13 @@ impl Writer {
             self.open()?;
             self.retry_after = Duration::ZERO;
         }
+        if self.continuity != snapshot.continuity {
+            self.break_sessions();
+            self.continuity = snapshot.continuity;
+        }
         let Some(store) = &mut self.store else {
             return Ok(());
         };
-        if self.continuity != snapshot.continuity {
-            store.gap(None);
-            self.serials.clear();
-            self.continuity = snapshot.continuity;
-        }
         if self
             .last_prune
             .is_none_or(|last| timestamp < last || timestamp - last >= 86400)
@@ -235,8 +221,7 @@ impl Writer {
             self.last_prune = Some(timestamp);
         }
         if !snapshot.daemon_available || !snapshot.reliable {
-            store.gap(None);
-            self.serials.clear();
+            self.break_sessions();
             return Ok(());
         }
         let current: HashSet<_> = snapshot
