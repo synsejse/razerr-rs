@@ -57,6 +57,10 @@ fn reject_unknown(applied: &[String], expected: &[String]) -> Result<(), Error> 
     Ok(())
 }
 
+/// Together these match the two seconds of `busy_timeout`.
+const WAL_ATTEMPTS: u32 = 40;
+const WAL_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
+
 pub(crate) fn check_reader(connection: &mut SqliteConnection) -> Result<(), Error> {
     let expected = expected(&MIGRATIONS)?;
     let applied = versions(connection)?;
@@ -87,13 +91,29 @@ pub(crate) fn configure(connection: &mut SqliteConnection, writable: bool) -> Re
     connection.batch_execute("PRAGMA foreign_keys = ON")?;
     if writable {
         // Journal mode is established outside the migration transaction.
-        connection.batch_execute("PRAGMA journal_mode = WAL")?;
+        enable_wal(connection)?;
         connection.batch_execute("PRAGMA synchronous = NORMAL")?;
     } else {
         // The URI already opens read-only. This also documents/enforces the intent.
         connection.batch_execute("PRAGMA query_only = ON")?;
     }
     Ok(())
+}
+
+/// `busy_timeout` does not cover this switch: SQLite reports "database is locked"
+/// at once while another opener is making the same change, so wait here instead.
+fn enable_wal(connection: &mut SqliteConnection) -> Result<(), Error> {
+    for _ in 0..WAL_ATTEMPTS {
+        match connection.batch_execute("PRAGMA journal_mode = WAL") {
+            Err(diesel::result::Error::DatabaseError(_, info))
+                if info.message().contains("locked") =>
+            {
+                std::thread::sleep(WAL_RETRY);
+            }
+            result => return Ok(result?),
+        }
+    }
+    Ok(connection.batch_execute("PRAGMA journal_mode = WAL")?)
 }
 
 #[cfg(test)]
